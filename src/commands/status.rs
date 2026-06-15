@@ -10,20 +10,16 @@ pub fn run() {
     let _ = execute!(stdout, terminal::EnterAlternateScreen, cursor::Hide);
 
     let mut sys = System::new_all();
-    // First refresh to get baseline
     sys.refresh_all();
     std::thread::sleep(std::time::Duration::from_millis(500));
 
     loop {
         sys.refresh_all();
-
-        // Move to top and overwrite (no Clear — prevents flicker)
         let _ = execute!(stdout, cursor::MoveTo(0, 0));
 
         let out = build_status(&sys);
         let _ = stdout.write_all(out.as_bytes());
-        // Clear any leftover lines from previous frame
-        let _ = stdout.write_all(b"\x1b[J"); // Clear from cursor to end of screen
+        let _ = stdout.write_all(b"\x1b[J");
         let _ = stdout.flush();
 
         if event::poll(std::time::Duration::from_millis(1000)).unwrap_or(false) {
@@ -46,39 +42,53 @@ fn build_status(sys: &System) -> String {
     let total_mem = sys.total_memory();
     let mem_pct = (used_mem as f64 / total_mem as f64 * 100.0) as u64;
     let host = System::host_name().unwrap_or_else(|| "Mac".into());
+    let os_ver = System::os_version().unwrap_or_else(|| "?".into());
+    let cpu_brand = sys.cpus().first().map(|c| c.brand().to_string()).unwrap_or_default();
     let uptime = System::uptime();
     let days = uptime / 86400;
     let hours = (uptime % 86400) / 3600;
     let health = compute_health(total_cpu, mem_pct);
+    let health_dot = if health >= 80 { "\x1b[32m●\x1b[0m" } else if health >= 50 { "\x1b[33m●\x1b[0m" } else { "\x1b[31m●\x1b[0m" };
 
     let mut o = String::new();
 
-    o.push_str(&format!("\r\n  \x1b[1mStatus\x1b[0m  \x1b[32m●\x1b[0m \x1b[1m{}\x1b[0m  {} · {}cores · {} · up {}d{}h\x1b[K\r\n",
-        health, host, cpu_cores, ByteSize::b(total_mem), days, hours));
-    o.push_str("  \x1b[90m─────────────────────────────────────\x1b[0m\x1b[K\r\n\r\n");
-
-    // CPU
-    o.push_str(&format!("  \x1b[33mCPU\x1b[0m   {} {:>4.0}%\x1b[K\r\n", bar(total_cpu as u64, 100), total_cpu));
-    for (i, cpu) in sys.cpus().iter().take(4).enumerate() {
-        let u = cpu.cpu_usage();
-        o.push_str(&format!("    C{} {} {:>4.0}%\x1b[K\r\n", i+1, bar(u as u64, 100), u));
-    }
-    if cpu_cores > 4 { o.push_str(&format!("    \x1b[90m(+{} more)\x1b[0m\x1b[K\r\n", cpu_cores - 4)); }
+    // Header
+    o.push_str(&format!("\r\n  \x1b[36mStatus\x1b[0m  Health {} \x1b[1m{}\x1b[0m  \x1b[90m{} · {} · {} · macOS {} · up {}d {}h\x1b[0m\x1b[K\r\n",
+        health_dot, health, host, cpu_brand, ByteSize::b(total_mem), os_ver, days, hours));
     o.push_str("\x1b[K\r\n");
 
-    // Memory
-    o.push_str(&format!("  \x1b[33mMEM\x1b[0m   {} {:>3}%  {}/{}\x1b[K\r\n",
-        bar(mem_pct, 100), mem_pct, ByteSize::b(used_mem), ByteSize::b(total_mem)));
+    // Two-column layout
+    // Left: CPU + Memory | Right: Disk + Power
+
+    // ─── CPU ───
+    o.push_str("  \x1b[33m● CPU\x1b[0m \x1b[90m─────────────────────────────\x1b[0m\x1b[K\r\n");
+    o.push_str(&format!("  Total {} {:>5.1}%\x1b[K\r\n", bar(total_cpu as u64, 100), total_cpu));
+    for (i, cpu) in sys.cpus().iter().take(4).enumerate() {
+        let u = cpu.cpu_usage();
+        o.push_str(&format!("  Core{} {} {:>5.1}%\x1b[K\r\n", i+1, bar(u as u64, 100), u));
+    }
+    if cpu_cores > 4 {
+        o.push_str(&format!("  \x1b[90m(+{} more cores)\x1b[0m\x1b[K\r\n", cpu_cores - 4));
+    }
+    o.push_str("\x1b[K\r\n");
+
+    // ─── Memory ───
+    o.push_str("  \x1b[33m▦ Memory\x1b[0m \x1b[90m──────────────────────────\x1b[0m\x1b[K\r\n");
+    let free_mem = total_mem - used_mem;
+    o.push_str(&format!("  Used  {} {:>3}%\x1b[K\r\n", bar(mem_pct, 100), mem_pct));
+    o.push_str(&format!("  Free  {} {:>3}%\x1b[K\r\n", bar_green(100 - mem_pct, 100), 100 - mem_pct));
     let swap_used = sys.used_swap();
     let swap_total = sys.total_swap();
     if swap_total > 0 {
         let sp = (swap_used as f64 / swap_total as f64 * 100.0) as u64;
-        o.push_str(&format!("  \x1b[33mSWP\x1b[0m   {} {:>3}%  {}/{}\x1b[K\r\n",
-            bar(sp, 100), sp, ByteSize::b(swap_used), ByteSize::b(swap_total)));
+        o.push_str(&format!("  Swap  {} {:>3}%  {}/{}\x1b[K\r\n", bar(sp, 100), sp, ByteSize::b(swap_used), ByteSize::b(swap_total)));
     }
+    o.push_str(&format!("  Total {} / {}  Avail \x1b[32m{}\x1b[0m\x1b[K\r\n",
+        ByteSize::b(used_mem), ByteSize::b(total_mem), ByteSize::b(free_mem)));
     o.push_str("\x1b[K\r\n");
 
-    // Disk
+    // ─── Disk ───
+    o.push_str("  \x1b[33m▤ Disk\x1b[0m \x1b[90m────────────────────────────\x1b[0m\x1b[K\r\n");
     let disks = Disks::new_with_refreshed_list();
     for disk in disks.list() {
         if disk.mount_point().to_string_lossy() == "/" {
@@ -86,34 +96,50 @@ fn build_status(sys: &System) -> String {
             let avail = disk.available_space();
             let used = total - avail;
             let pct = (used as f64 / total as f64 * 100.0) as u64;
-            o.push_str(&format!("  \x1b[33mDISK\x1b[0m  {} {:>3}%  \x1b[32m{} free\x1b[0m\x1b[K\r\n",
-                bar(pct, 100), pct, ByteSize::b(avail)));
+            o.push_str(&format!("  {} {} {:>3}%  {} used, \x1b[32m{} free\x1b[0m\x1b[K\r\n",
+                "INTR", bar(pct, 100), pct, ByteSize::b(used), ByteSize::b(avail)));
         }
     }
     o.push_str("\x1b[K\r\n");
 
-    // Battery
+    // ─── Power ───
     if let Some(batt) = get_battery_info() {
-        o.push_str(&format!("  \x1b[33mBAT\x1b[0m   {} {:>3}%  \x1b[32m{}\x1b[0m · {} cycles\x1b[K\r\n",
-            bar(batt.level, 100), batt.level, batt.status, batt.cycles));
+        o.push_str("  \x1b[33m⚡ Power\x1b[0m \x1b[90m───────────────────────────\x1b[0m\x1b[K\r\n");
+        o.push_str(&format!("  Level  {} {:>3}%\x1b[K\r\n", bar_green(batt.level, 100), batt.level));
+        o.push_str(&format!("  \x1b[32m{}\x1b[0m · {} cycles\x1b[K\r\n", batt.status, batt.cycles));
         o.push_str("\x1b[K\r\n");
     }
 
-    // Processes
-    o.push_str("  \x1b[33mPROCS\x1b[0m\x1b[K\r\n");
+    // ─── Processes ───
+    o.push_str("  \x1b[33m⚙ Processes\x1b[0m \x1b[90m────────────────────────\x1b[0m\x1b[K\r\n");
     let mut procs: Vec<_> = sys.processes().values()
         .map(|p| (p.name().to_string(), p.cpu_usage(), p.memory()))
         .filter(|(_, cpu, _)| *cpu > 3.0)
         .collect();
     procs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     for (name, cpu, mem) in procs.iter().take(5) {
-        let n: &str = if name.len() > 14 { &name[..14] } else { name.as_str() };
+        let n: &str = if name.len() > 15 { &name[..15] } else { name.as_str() };
         let hot = if *cpu > 80.0 { " \x1b[31mhot\x1b[0m" } else { "" };
-        o.push_str(&format!("    {:<14} {:>5.1}% {:>8}{}\x1b[K\r\n", n, cpu, ByteSize::b(*mem), hot));
+        o.push_str(&format!("  {:<15} {} {:>5.1}% {:>8}{}\x1b[K\r\n",
+            n, mini_bar(*cpu as u64), cpu, ByteSize::b(*mem), hot));
     }
     o.push_str("\x1b[K\r\n");
 
-    o.push_str("  \x1b[90m─────────────────────────────────────\x1b[0m\x1b[K\r\n");
+    // ─── Network ───
+    o.push_str("  \x1b[33m⇅ Network\x1b[0m \x1b[90m─────────────────────────\x1b[0m\x1b[K\r\n");
+    let networks = sysinfo::Networks::new_with_refreshed_list();
+    let mut total_rx = 0u64;
+    let mut total_tx = 0u64;
+    for (_name, data) in networks.list() {
+        total_rx += data.received();
+        total_tx += data.transmitted();
+    }
+    o.push_str(&format!("  Down  {}/s\x1b[K\r\n", ByteSize::b(total_rx)));
+    o.push_str(&format!("  Up    {}/s\x1b[K\r\n", ByteSize::b(total_tx)));
+    o.push_str("\x1b[K\r\n");
+
+    // Footer
+    o.push_str("  \x1b[90m──────────────────────────────────────\x1b[0m\x1b[K\r\n");
     o.push_str("  \x1b[90mq quit · refreshes every 1s\x1b[0m\x1b[K\r\n");
 
     o
@@ -121,11 +147,28 @@ fn build_status(sys: &System) -> String {
 
 fn bar(value: u64, max: u64) -> String {
     let width: usize = 15;
-    let filled = (value as f64 / max as f64 * width as f64) as usize;
+    let filled = (value as f64 / max as f64 * width as f64).min(width as f64) as usize;
     let empty = width.saturating_sub(filled);
     let b = format!("{}{}", "█".repeat(filled), "░".repeat(empty));
     if value > 80 { format!("\x1b[31m{}\x1b[0m", b) }
     else if value > 60 { format!("\x1b[33m{}\x1b[0m", b) }
+    else { format!("\x1b[32m{}\x1b[0m", b) }
+}
+
+fn bar_green(value: u64, max: u64) -> String {
+    let width: usize = 15;
+    let filled = (value as f64 / max as f64 * width as f64).min(width as f64) as usize;
+    let empty = width.saturating_sub(filled);
+    format!("\x1b[32m{}\x1b[0m\x1b[90m{}\x1b[0m", "█".repeat(filled), "░".repeat(empty))
+}
+
+fn mini_bar(value: u64) -> String {
+    let width: usize = 5;
+    let filled = (value as f64 / 100.0 * width as f64).min(width as f64) as usize;
+    let empty = width.saturating_sub(filled);
+    let b = format!("{}{}", "▮".repeat(filled), "▯".repeat(empty));
+    if value > 80 { format!("\x1b[31m{}\x1b[0m", b) }
+    else if value > 50 { format!("\x1b[33m{}\x1b[0m", b) }
     else { format!("\x1b[32m{}\x1b[0m", b) }
 }
 
