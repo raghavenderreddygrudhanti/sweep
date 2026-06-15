@@ -15,7 +15,6 @@ pub fn run(dry_run: bool) {
 
     if apps_list.is_empty() {
         println!("  No apps found.\n");
-        super::footer::wait_for_key();
         return;
     }
 

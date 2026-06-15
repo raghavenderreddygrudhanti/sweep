@@ -45,7 +45,6 @@ pub fn run(dry_run: bool, older_than_days: u64) {
 
     if found.is_empty() {
         println!("\n  ✨ No old build artifacts found.\n");
-        super::footer::wait_for_key();
         return;
     }
 

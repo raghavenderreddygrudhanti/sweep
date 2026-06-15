@@ -142,7 +142,10 @@ pub fn run(path: &str) {
             // Show ready items first
             for (display_idx, (orig_idx, cat)) in ready.iter().enumerate() {
                 let size = cat.size as u64;
-                let bar_len = if max_size > 0 { (size as f64 / max_size as f64 * 15.0) as usize } else { 0 };
+                let bar_len = if max_size > 0 {
+                    let calc = (size as f64 / max_size as f64 * 15.0) as usize;
+                    calc.max(1) // Always show at least 1 block of color
+                } else { 1 };
                 let bar = format!("\x1b[{}m{}\x1b[0m\x1b[90m{}\x1b[0m",
                     cat.color,
                     "█".repeat(bar_len),
@@ -176,7 +179,7 @@ pub fn run(path: &str) {
                     .trim_start_matches('/');
                 let name = if name.len() > 25 { &name[..25] } else { name };
 
-                let bar_len = (result.size as f64 / max_size as f64 * 12.0) as usize;
+                let bar_len = (result.size as f64 / max_size as f64 * 12.0).max(1.0) as usize;
                 let bar = format!("█{}░{}", "█".repeat(bar_len.saturating_sub(1)), "░".repeat(12usize.saturating_sub(bar_len)));
                 let ptr = if i == selected { " \x1b[32m▶\x1b[0m" } else { "  " };
                 let icon = if result.is_dir { "📁" } else { "📄" };
