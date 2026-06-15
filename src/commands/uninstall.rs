@@ -150,14 +150,17 @@ pub fn run(dry_run: bool) {
                         }
                         // If cancelled, just continue
                     } else if selected < apps_list.len() {
-                        // No selection — delete currently highlighted app (with confirm)
+                        // No selection — delete currently highlighted app
                         let app = &apps_list[selected];
-                        
-                        let _ = stdout.write_all(format!(
-                            "\r\n  \x1b[1;31m⚠ Delete {}? (y/n):\x1b[0m ", app.name
-                        ).as_bytes());
-                        let _ = stdout.flush();
 
+                        // Leave alternate screen to show confirm in normal terminal
+                        let _ = execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show);
+                        let _ = terminal::disable_raw_mode();
+
+                        print!("\n  \x1b[1;31m⚠ Delete {}? (y/n):\x1b[0m ", app.name);
+                        let _ = io::stdout().flush();
+
+                        let _ = terminal::enable_raw_mode();
                         let confirm = loop {
                             if let Ok(Event::Key(k)) = event::read() {
                                 match k.code {
@@ -166,12 +169,11 @@ pub fn run(dry_run: bool) {
                                 }
                             }
                         };
+                        let _ = terminal::disable_raw_mode();
 
                         if confirm {
-                            let _ = execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show);
-                            let _ = terminal::disable_raw_mode();
-
-                            println!("\n  Uninstalling {}...", app.name);
+                            println!("yes\n");
+                            println!("  Uninstalling {}...", app.name);
                             let _ = std::process::Command::new("osascript")
                                 .args(["-e", &format!(
                                     "tell application \"Finder\" to delete POSIX file \"{}\"",
@@ -186,8 +188,10 @@ pub fn run(dry_run: bool) {
                                     )]).output();
                             }
                             println!("  ✓ {} (+{} remnants) moved to Trash\n", app.name, remnants.len());
-                            return;
+                        } else {
+                            println!("no\n  Cancelled.\n");
                         }
+                        return;
                     }
                 }
                 KeyCode::Char('q') | KeyCode::Esc => break,

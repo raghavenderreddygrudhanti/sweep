@@ -81,13 +81,13 @@ pub fn purge_memory(dry_run: bool) -> bool {
     run_cmd("Purge inactive memory", "sudo", &["purge"], dry_run)
 }
 
-/// Remove .DS_Store files recursively from home.
+/// Remove .DS_Store files recursively from home (max depth 4 for speed).
 pub fn clean_ds_store(dry_run: bool) -> u64 {
     let home = dirs::home_dir().unwrap_or_default();
     let mut count = 0u64;
 
     for entry in walkdir::WalkDir::new(&home)
-        .max_depth(6)
+        .max_depth(4)
         .into_iter()
         .filter_map(|e| e.ok())
     {

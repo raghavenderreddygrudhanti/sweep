@@ -67,7 +67,7 @@ pub fn run(dry_run: bool) {
     println!("    ✓ Dock refreshed");
     println!("    ✓ Finder refreshed");
 
-    // Group: .DS_Store
+    // Group: .DS_Store (limited depth for speed)
     println!("  \x1b[1;35m▸ .DS_Store Cleanup\x1b[0m");
     print!("    ⏳ Scanning...");
     let _ = io::stdout().flush();
@@ -75,23 +75,34 @@ pub fn run(dry_run: bool) {
     if ds > 0 {
         let ds_size = ds * 4096;
         total += ds_size;
-        print!("\r    ✓ {} files removed ({})\x1b[K\n", ds, ByteSize::b(ds_size));
+        print!("\r    ✓ {} files ({})\x1b[K\n", ds, ByteSize::b(ds_size));
     } else {
         print!("\r    ✓ Already clean\x1b[K\n");
     }
 
-    // Group: Browser Caches
+    // Group: Browser Caches (parallel scan)
     println!("  \x1b[1;35m▸ Browser Caches\x1b[0m");
     let browsers = crate::cleaners::browser::browser_cache_paths();
+    let browser_results: Vec<_> = browsers.into_iter()
+        .map(|(path, name)| {
+            let p = path.clone();
+            std::thread::spawn(move || {
+                let size = scanner::scan_size(&p).0;
+                (path, name, size)
+            })
+        })
+        .collect::<Vec<_>>()
+        .into_iter()
+        .filter_map(|h| h.join().ok())
+        .filter(|(_, _, size)| *size > 5_000_000)
+        .collect();
+
     let mut any_browser = false;
-    for (path, name) in &browsers {
-        let size = scanner::scan_size(path).0;
-        if size > 5_000_000 {
-            println!("    ✓ {} ({})", name, ByteSize::b(size).to_string().yellow());
-            total += size;
-            any_browser = true;
-            if !dry_run { let _ = std::fs::remove_dir_all(path); }
-        }
+    for (path, name, size) in &browser_results {
+        println!("    ✓ {} ({})", name, ByteSize::b(*size).to_string().yellow());
+        total += *size;
+        any_browser = true;
+        if !dry_run { let _ = std::fs::remove_dir_all(path); }
     }
     if !any_browser {
         println!("    ✓ Browser caches clean");
