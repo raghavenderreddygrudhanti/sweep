@@ -64,28 +64,8 @@ pub fn run() {
                 KeyCode::Enter => {
                     let _ = execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show);
                     let _ = terminal::disable_raw_mode();
-
                     run_selected(selected);
-
-                    // Show prompt and wait for keypress
-                    print!("\n  \x1b[90mPress any key to return to menu...\x1b[0m");
-                    let _ = std::io::Write::flush(&mut io::stdout());
-
-                    // Wait 500ms to ensure output is visible + drain stale keys
-                    std::thread::sleep(std::time::Duration::from_millis(500));
-                    let _ = terminal::enable_raw_mode();
-                    while event::poll(std::time::Duration::from_millis(100)).unwrap_or(false) {
-                        let _ = event::read();
-                    }
-                    // Block until fresh keypress
-                    loop {
-                        if let Ok(Event::Key(_)) = event::read() { break; }
-                    }
-                    let _ = terminal::disable_raw_mode();
-
-                    // Re-enter menu
-                    let _ = terminal::enable_raw_mode();
-                    let _ = execute!(stdout, terminal::EnterAlternateScreen, cursor::Hide);
+                    return;
                 }
                 KeyCode::Char('1') => { selected = 0; }
                 KeyCode::Char('2') => { selected = 1; }

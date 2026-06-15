@@ -208,7 +208,7 @@ pub fn run(path: &str) {
                 out.push_str(&format!("  \x1b[32m{} selected\x1b[0m — ", multi_count));
                 out.push_str("\x1b[90mD delete selected · Space toggle · n clear\x1b[0m\r\n");
             } else {
-                out.push_str("  \x1b[90m↑↓ nav · →Enter open · ←Back · Space select · d del · L large · q quit\x1b[0m\r\n");
+                out.push_str("  \x1b[90m↑↓ nav · →Enter open · ←Back · Space select · d del · q quit\x1b[0m\r\n");
             }
         }
 
@@ -336,7 +336,31 @@ pub fn run(path: &str) {
                             }
                         }
                     }
-                    KeyCode::Char('q') | KeyCode::Esc => break,
+                    KeyCode::Char('q') => break,
+                    KeyCode::Esc => {
+                        // Esc goes back, only q quits
+                        if mode == "folder" {
+                            if let Some(parent) = current_path.parent() {
+                                let parent_buf = parent.to_path_buf();
+                                current_path = parent_buf;
+                                folder_results = scanner::scan_children(&current_path);
+                                folder_results.sort_by(|a, b| b.size.cmp(&a.size));
+                                selected = 0;
+                                multi_selected.clear();
+                            }
+                            let is_root = categories.iter().filter(|c| c.size > 0).any(|c| c.path == current_path)
+                                || current_path == dirs::home_dir().unwrap_or_default()
+                                || current_path == PathBuf::from("/");
+                            if is_root {
+                                mode = "overview";
+                                selected = 0;
+                            }
+                        } else {
+                            // Already in overview, Esc quits
+                            break;
+                        }
+                        status_msg.clear();
+                    }
                     _ => {}
                 }
             }

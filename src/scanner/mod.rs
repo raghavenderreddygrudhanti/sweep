@@ -43,7 +43,11 @@ pub fn scan_children(path: &Path) -> Vec<ScanResult> {
             }
 
             let is_dir = p.is_dir();
-            let size = sizes.get(&name).copied().unwrap_or(0);
+            let size = if is_dir {
+                sizes.get(&name).copied().unwrap_or(0)
+            } else {
+                p.metadata().map(|m| m.len()).unwrap_or(0)
+            };
 
             if size == 0 && is_dir {
                 return None;
