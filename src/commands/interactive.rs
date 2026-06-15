@@ -96,11 +96,32 @@ fn run_selected(idx: usize) {
 }
 
 fn show_more_options() {
-    println!("\n  \x1b[1mMore Commands:\x1b[0m\n");
-    println!("  sweep ai           Clean AI/ML caches (HuggingFace, Ollama)");
-    println!("  sweep dev          Clean build artifacts (node_modules, target)");
-    println!("  sweep docker       Clean Docker junk");
-    println!("  sweep installer    Remove .dmg/.pkg files");
-    println!("  sweep scan <path>  Analyze specific directory");
+    println!("\n  \x1b[1mCOMMANDS\x1b[0m");
+    println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep clean", "Free up disk space");
+    println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep uninstall", "Remove apps completely");
+    println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep optimize", "Refresh caches and services");
+    println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep scan", "Explore disk usage");
+    println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep status", "Monitor system health");
+    println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep history", "Review cleanup activity");
+    println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep ai", "Clean AI/ML caches");
+    println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep dev", "Remove old project artifacts");
+    println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep docker", "Clean Docker junk");
+    println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep installer", "Find and remove installer files");
+    println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep completion <shell>", "Setup shell tab completion");
+    println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep --help", "Show help");
+    println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep --version", "Show version");
+    println!();
+    println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep clean --dry-run", "Preview cleanup");
+    println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep optimize --dry-run", "Preview optimization");
+    println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep uninstall --dry-run", "Preview app uninstall");
+    println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep dev --dry-run", "Preview project purge");
+    println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep installer --dry-run", "Preview installer cleanup");
+    println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep dev --older-than 30", "Only clean artifacts >30 days");
+    println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep scan ~/Downloads", "Analyze specific directory");
+    println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep history", "Show operation log");
+    println!();
+    println!("  \x1b[1mOPTIONS\x1b[0m");
+    println!("  \x1b[32m{:<28}\x1b[0m {}", "--dry-run", "Preview without deleting");
+    println!("  \x1b[32m{:<28}\x1b[0m {}", "--debug", "Show detailed operation logs");
     println!();
 }
