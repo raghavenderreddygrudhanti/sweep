@@ -1,12 +1,16 @@
 [package]
-name = "sweep"
+name = "sweep-cli"
 version = "0.1.0"
 edition = "2021"
-description = "🧹 Fast system cleaner for macOS and Linux. 10x faster than shell-based tools."
+description = "Fast system cleaner for macOS — clean caches, uninstall apps, optimize system. Single binary, no dependencies."
 license = "MIT"
 repository = "https://github.com/raghavenderreddygrudhanti/sweep"
-keywords = ["clean", "cache", "disk", "system", "cli"]
+keywords = ["clean", "cache", "disk", "system", "macos"]
 categories = ["command-line-utilities", "filesystem"]
+
+[[bin]]
+name = "sweep"
+path = "src/main.rs"
 
 [dependencies]
 walkdir = "2"
