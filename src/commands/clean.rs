@@ -42,10 +42,13 @@ pub fn run(dry_run: bool) {
 
     // ─── App caches ────────────────────────────────────────
     println!("  \x1b[1;32m▸ App caches\x1b[0m");
-    total_freed += clean_item("Media analysis cache", &home.join("Library/Caches/com.apple.mediaanalysisd"), dry_run);
-    total_freed += clean_item("Spotlight cache", &home.join("Library/Caches/com.apple.SpotlightIndex"), dry_run);
-    total_freed += clean_item("Apple Intelligence runtime cache", &home.join("Library/Caches/com.apple.ail"), dry_run);
-    total_freed += clean_item("Parsecd cache", &home.join("Library/Caches/com.apple.parsecd"), dry_run);
+    let app_caches = crate::cleaners::apps_cache::app_cache_paths();
+    for (path, name) in &app_caches {
+        total_freed += clean_item(name, path, dry_run);
+    }
+    if app_caches.is_empty() {
+        println!("    ✓ Nothing to clean");
+    }
     println!();
 
     // ─── Browsers ──────────────────────────────────────────
@@ -83,6 +86,39 @@ pub fn run(dry_run: bool) {
     total_freed += clean_item("Ollama models", &home.join(".ollama/models"), dry_run);
     total_freed += clean_item("PyTorch cache", &home.join(".cache/torch"), dry_run);
     println!();
+
+    // ─── Xcode ─────────────────────────────────────────────
+    let xcode_paths = crate::cleaners::xcode::xcode_paths();
+    if !xcode_paths.is_empty() {
+        println!("  \x1b[1;32m▸ Xcode\x1b[0m");
+        for (path, name) in &xcode_paths {
+            total_freed += clean_item(name, path, dry_run);
+        }
+        println!();
+    }
+
+    // ─── JetBrains ─────────────────────────────────────────
+    let jb_paths = crate::cleaners::jetbrains::jetbrains_paths();
+    if !jb_paths.is_empty() {
+        println!("  \x1b[1;32m▸ JetBrains\x1b[0m");
+        for (path, name) in &jb_paths {
+            total_freed += clean_item(name, path, dry_run);
+        }
+        println!();
+    }
+
+    // ─── Homebrew ──────────────────────────────────────────
+    if crate::cleaners::homebrew::brew_cache_path().is_some() {
+        println!("  \x1b[1;32m▸ Homebrew\x1b[0m");
+        let brew_size = crate::cleaners::homebrew::brew_cleanup(dry_run);
+        if brew_size > 0 {
+            println!("    ✓ Homebrew cache, \x1b[32m{}\x1b[0m", ByteSize::b(brew_size));
+            total_freed += brew_size;
+        } else {
+            println!("    ✓ Already clean");
+        }
+        println!();
+    }
 
     // ─── Summary ───────────────────────────────────────────
     println!("  ═══════════════════════════════════════════════");

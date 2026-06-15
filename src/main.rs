@@ -71,6 +71,14 @@ enum Commands {
     },
     /// Show real-time system status
     Status,
+    /// Show operation history
+    History,
+    /// Generate shell completions
+    Completion {
+        /// Shell type (bash, zsh, fish)
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
 }
 
 fn main() {
@@ -86,6 +94,15 @@ fn main() {
         Some(Commands::Optimize { dry_run }) => commands::optimize::run(dry_run),
         Some(Commands::Installer { dry_run }) => commands::installer::run(dry_run),
         Some(Commands::Status) => commands::status::run(),
+        Some(Commands::History) => {
+            println!("\n  \x1b[1mOperation History\x1b[0m\n");
+            history::show_history();
+            println!();
+        },
+        Some(Commands::Completion { shell }) => {
+            use clap::CommandFactory;
+            clap_complete::generate(shell, &mut Cli::command(), "sweep", &mut std::io::stdout());
+        },
         None => commands::interactive::run(),
     }
 }

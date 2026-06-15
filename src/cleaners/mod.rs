@@ -8,6 +8,10 @@ pub mod browser;
 pub mod apps;
 pub mod trash;
 pub mod optimize;
+pub mod xcode;
+pub mod jetbrains;
+pub mod apps_cache;
+pub mod homebrew;
 
 use std::path::Path;
 use std::fs;
@@ -16,7 +20,7 @@ use std::fs;
 pub fn remove_dir(path: &Path, dry_run: bool) -> u64 {
     use crate::scanner;
 
-    let (size, _) = scanner::scan_size(path);
+    let size = scanner::scan_size(path).0;
 
     if !dry_run {
         if let Err(e) = fs::remove_dir_all(path) {
