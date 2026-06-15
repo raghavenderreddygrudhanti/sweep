@@ -66,34 +66,49 @@ pub fn scan_children(path: &Path) -> Vec<ScanResult> {
     results
 }
 
-/// Batch `du` — runs `du -sk *` in the directory to get all child sizes
-/// in a single subprocess call. Returns HashMap<filename, bytes>.
+/// Batch `du` — runs `du -sk` on entries inside dir to get all child sizes.
+/// Returns HashMap<filename, bytes>.
 fn du_batch(dir: &Path) -> HashMap<String, u64> {
     let mut map = HashMap::new();
 
-    // du -sk on each entry inside dir, with depth 0
-    // Using `du -skc dir/*` would hit arg limit, so use du -sk with maxdepth
-    let output = std::process::Command::new("du")
-        .args(["-sk", "-d", "1"])
-        .arg(dir)
-        .stderr(std::process::Stdio::null())
-        .output();
+    // Read dir entries and batch them into du calls
+    let entries: Vec<_> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.is_dir())
+        .collect();
 
-    if let Ok(o) = output {
-        if o.status.success() {
-            let stdout = String::from_utf8_lossy(&o.stdout);
-            for line in stdout.lines() {
-                let mut parts = line.split_whitespace();
-                if let (Some(size_str), Some(path_str)) = (parts.next(), parts.next()) {
-                    if let Ok(kb) = size_str.parse::<u64>() {
-                        // Extract just the filename from the full path
-                        let name = Path::new(path_str)
-                            .file_name()
-                            .unwrap_or_default()
-                            .to_string_lossy()
-                            .to_string();
-                        if !name.is_empty() && path_str != dir.to_string_lossy().as_ref() {
-                            map.insert(name, kb * 1024);
+    if entries.is_empty() {
+        return map;
+    }
+
+    // Run du -sk on all entries at once (pass paths as arguments)
+    // Chunk into groups of 50 to avoid arg limit
+    for chunk in entries.chunks(50) {
+        let mut cmd = std::process::Command::new("du");
+        cmd.arg("-sk");
+        for path in chunk {
+            cmd.arg(path);
+        }
+        cmd.stderr(std::process::Stdio::null());
+
+        if let Ok(output) = cmd.output() {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                for line in stdout.lines() {
+                    let mut parts = line.splitn(2, '\t');
+                    if let (Some(size_str), Some(path_str)) = (parts.next(), parts.next()) {
+                        if let Ok(kb) = size_str.trim().parse::<u64>() {
+                            let name = Path::new(path_str)
+                                .file_name()
+                                .unwrap_or_default()
+                                .to_string_lossy()
+                                .to_string();
+                            if !name.is_empty() {
+                                map.insert(name, kb * 1024);
+                            }
                         }
                     }
                 }

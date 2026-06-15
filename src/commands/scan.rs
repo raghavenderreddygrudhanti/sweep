@@ -5,9 +5,87 @@ use std::thread;
 use std::time::Instant;
 use bytesize::ByteSize;
 use crossterm::{terminal, cursor, execute, event};
-use crossterm::event::{Event, KeyCode};
+use crossterm::event::Event;
 use std::io::{self, Write};
 use crate::{scanner, cache};
+
+/// Try to delete a file/folder. Uses direct rm (no Finder GUI popups).
+/// For user safety, moves to ~/.Trash when possible, falls back to sudo via macOS auth dialog.
+fn try_delete(path: &str) -> bool {
+    let p = PathBuf::from(path);
+    if !p.exists() { return true; }
+
+    let size = if p.is_dir() {
+        crate::scanner::scan_size(&p).0
+    } else {
+        p.metadata().map(|m| m.len()).unwrap_or(0)
+    };
+
+    // Strategy 1: Move to ~/.Trash (recoverable, no GUI popup)
+    let trash_dir = dirs::home_dir().unwrap_or_default().join(".Trash");
+    let file_name = p.file_name().unwrap_or_default().to_string_lossy().to_string();
+    let mut trash_dest = trash_dir.join(&file_name);
+
+    // Handle name collision in Trash
+    if trash_dest.exists() {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        trash_dest = trash_dir.join(format!("{}_{}", file_name, timestamp));
+    }
+
+    // Try mv to Trash
+    let mv_result = std::process::Command::new("mv")
+        .arg(path)
+        .arg(&trash_dest)
+        .output();
+
+    if let Ok(output) = mv_result {
+        if output.status.success() && !p.exists() {
+            crate::history::log_delete(path, size, "trash");
+            return true;
+        }
+    }
+
+    // Strategy 2: Direct rm -rf (works for most owned files)
+    let rm_result = if p.is_dir() {
+        std::process::Command::new("rm")
+            .args(["-rf", path])
+            .output()
+    } else {
+        std::process::Command::new("rm")
+            .args(["-f", path])
+            .output()
+    };
+
+    if let Ok(output) = rm_result {
+        if output.status.success() && !p.exists() {
+            crate::history::log_delete(path, size, "delete");
+            return true;
+        }
+    }
+
+    // Strategy 3: Use macOS auth dialog (like Mole does) — prompts for password
+    let script = if p.is_dir() {
+        format!("do shell script \"rm -rf '{}'\" with administrator privileges", path.replace('\'', "'\\''"))
+    } else {
+        format!("do shell script \"rm -f '{}'\" with administrator privileges", path.replace('\'', "'\\''"))
+    };
+
+    let auth_result = std::process::Command::new("osascript")
+        .args(["-e", &script])
+        .output();
+
+    if let Ok(output) = auth_result {
+        if output.status.success() && !p.exists() {
+            crate::history::log_delete(path, size, "sudo-delete");
+            return true;
+        }
+    }
+
+    false
+}
 
 struct Category {
     name: &'static str,
@@ -88,7 +166,6 @@ pub fn run(path: &str) {
     let mut multi_selected: HashMap<String, bool> = HashMap::new();
     let mut status_msg: String = String::new();
     let mut confirm_delete: bool = false;
-    let spinners = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"];
     let mut spin_frame: usize = 0;
 
     loop {
@@ -113,17 +190,20 @@ pub fn run(path: &str) {
         let elapsed = start.elapsed().as_secs_f64();
 
         let mut out = String::new();
-        out.push_str("\r\n");
-
         let scanning = categories.iter().any(|c| c.size < 0);
-        let scan_indicator = if scanning {
-            spin_frame = (spin_frame + 1) % spinners.len();
-            format!(" {}", spinners[spin_frame])
-        } else { " ✓".to_string() };
+        if scanning {
+            out.push_str(&super::ui::tui_header_animated(super::ui::action_name("scan"), spin_frame));
+        } else {
+            out.push_str(&super::ui::tui_header("Analyze Disk"));
+        }
 
-        out.push_str(&format!("  \x1b[1;36mAnalyze Disk\x1b[0m  ({} free){}\r\n",
+        let scan_indicator = if scanning {
+            spin_frame = (spin_frame + 1) % 10;
+            format!(" {} ", super::ui::spinner(spin_frame))
+        } else { " \x1b[32m✓\x1b[0m ".to_string() };
+
+        out.push_str(&format!("  \x1b[90m{} free\x1b[0m{}\r\n\r\n",
             ByteSize::b(free_space), scan_indicator));
-        out.push_str("  \x1b[90m─────────────────────────────────────────────\x1b[0m\r\n\r\n");
 
         if mode == "overview" {
             // Separate ready vs pending entries
@@ -199,7 +279,7 @@ pub fn run(path: &str) {
         }
 
         // Footer
-        out.push_str("\r\n  \x1b[90m─────────────────────────────────────────────\x1b[0m\r\n");
+        out.push_str(super::ui::footer_sep());
         if !status_msg.is_empty() {
             out.push_str(&format!("  \x1b[33m{}\x1b[0m\r\n", status_msg));
         }
@@ -208,10 +288,9 @@ pub fn run(path: &str) {
         } else {
             let multi_count = multi_selected.len();
             if multi_count > 0 {
-                out.push_str(&format!("  \x1b[32m{} selected\x1b[0m — ", multi_count));
-                out.push_str("\x1b[90mD delete selected · Space toggle · n clear\x1b[0m\r\n");
+                out.push_str(&super::ui::footer_selected(multi_count));
             } else {
-                out.push_str("  \x1b[90m↑↓ nav · →Enter open · ←Back · Space select · d del · q quit\x1b[0m\r\n");
+                out.push_str(super::ui::footer_browse());
             }
         }
 
@@ -229,15 +308,23 @@ pub fn run(path: &str) {
 
                 // Handle delete confirmation first
                 if confirm_delete {
-                    match key.code {
-                        KeyCode::Char('y') | KeyCode::Char('Y') => {
+                    let action = super::ui::map_key(key);
+                    match action {
+                        super::ui::NavAction::Char('y') | super::ui::NavAction::Char('Y') => {
                             if mode == "folder" && selected < folder_results.len() {
                                 let target = &folder_results[selected].path.clone();
-                                let _ = std::process::Command::new("osascript")
-                                    .args(["-e", &format!(
-                                        "tell application \"Finder\" to delete POSIX file \"{}\"", target
-                                    )]).output();
-                                status_msg = format!("Moved to Trash: {}", PathBuf::from(target).file_name().unwrap_or_default().to_string_lossy());
+                                status_msg = format!("{}", super::ui::action_name("delete"));
+                                let _ = execute!(stdout, cursor::MoveTo(0, 0));
+                                let deleted = try_delete(target);
+                                if deleted {
+                                    status_msg = format!("✓ Vanished: {}", PathBuf::from(target).file_name().unwrap_or_default().to_string_lossy());
+                                } else if target.contains("Containers/com.docker") {
+                                    status_msg = "✗ Protected by macOS. Use: docker system prune".to_string();
+                                } else if target.contains("/Library/") {
+                                    status_msg = "✗ System protected. Try: sudo rm -rf <path>".to_string();
+                                } else {
+                                    status_msg = "✗ Permission denied".to_string();
+                                }
                                 folder_results = scanner::scan_children(&current_path);
                                 folder_results.sort_by(|a, b| b.size.cmp(&a.size));
                                 if selected >= folder_results.len() && selected > 0 { selected -= 1; }
@@ -249,17 +336,17 @@ pub fn run(path: &str) {
                     continue;
                 }
 
-                match key.code {
-                    KeyCode::Up | KeyCode::Char('k') => {
+                let action = super::ui::map_key(key);
+                match action {
+                    super::ui::NavAction::Up => {
                         if selected > 0 { selected -= 1; }
                         status_msg.clear();
                     }
-                    KeyCode::Down | KeyCode::Char('j') => {
+                    super::ui::NavAction::Down => {
                         if selected < item_count.saturating_sub(1) { selected += 1; }
                         status_msg.clear();
                     }
-                    KeyCode::Char(' ') => {
-                        // Toggle multi-select
+                    super::ui::NavAction::Toggle => {
                         if mode == "folder" && selected < folder_results.len() {
                             let path = folder_results[selected].path.clone();
                             if multi_selected.contains_key(&path) {
@@ -269,12 +356,11 @@ pub fn run(path: &str) {
                             }
                         }
                     }
-                    KeyCode::Char('n') => {
+                    super::ui::NavAction::ClearAll => {
                         multi_selected.clear();
                     }
-                    KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
+                    super::ui::NavAction::Select => {
                         if mode == "overview" {
-                            // Get the displayed ready list to find the right path
                             let ready: Vec<(usize, &Category)> = categories.iter().enumerate()
                                 .filter(|(_, c)| c.size > 0)
                                 .collect();
@@ -299,49 +385,8 @@ pub fn run(path: &str) {
                             status_msg.clear();
                         }
                     }
-                    KeyCode::Left | KeyCode::Backspace | KeyCode::Char('h') | KeyCode::Char('b') => {
-                        if mode == "folder" {
-                            if let Some(parent) = current_path.parent() {
-                                let parent_buf = parent.to_path_buf();
-                                current_path = parent_buf;
-                                folder_results = scanner::scan_children(&current_path);
-                                folder_results.sort_by(|a, b| b.size.cmp(&a.size));
-                                selected = 0;
-                                multi_selected.clear();
-                            }
-                            let is_root = categories.iter().any(|c| c.path == current_path)
-                                || current_path == dirs::home_dir().unwrap_or_default()
-                                || current_path == PathBuf::from("/");
-                            if is_root {
-                                mode = "overview";
-                                selected = 0;
-                            }
-                        }
-                        status_msg.clear();
-                    }
-                    KeyCode::Char('d') | KeyCode::Char('D') | KeyCode::Delete => {
-                        if mode == "folder" {
-                            if !multi_selected.is_empty() {
-                                // Delete all selected
-                                for path in multi_selected.keys() {
-                                    let _ = std::process::Command::new("osascript")
-                                        .args(["-e", &format!(
-                                            "tell application \"Finder\" to delete POSIX file \"{}\"", path
-                                        )]).output();
-                                }
-                                status_msg = format!("Moved {} items to Trash", multi_selected.len());
-                                multi_selected.clear();
-                                folder_results = scanner::scan_children(&current_path);
-                                folder_results.sort_by(|a, b| b.size.cmp(&a.size));
-                                if selected >= folder_results.len() && selected > 0 { selected -= 1; }
-                            } else if selected < folder_results.len() {
-                                confirm_delete = true;
-                            }
-                        }
-                    }
-                    KeyCode::Char('q') => break,
-                    KeyCode::Esc => {
-                        // Esc goes back, only q quits
+                    super::ui::NavAction::Back => {
+                        // Esc/Left/Backspace — go back one level
                         if mode == "folder" {
                             if let Some(parent) = current_path.parent() {
                                 let parent_buf = parent.to_path_buf();
@@ -359,10 +404,32 @@ pub fn run(path: &str) {
                                 selected = 0;
                             }
                         } else {
-                            // Already in overview, Esc quits
+                            // In overview — Esc goes back to main menu
                             break;
                         }
                         status_msg.clear();
+                    }
+                    super::ui::NavAction::Quit => {
+                        // q — always quit back to main menu
+                        break;
+                    }
+                    super::ui::NavAction::Delete => {
+                        if mode == "folder" {
+                            if !multi_selected.is_empty() {
+                                let count = multi_selected.len();
+                                let mut ok = 0;
+                                for path in multi_selected.keys() {
+                                    if try_delete(path) { ok += 1; }
+                                }
+                                status_msg = format!("✓ Deleted {}/{} items", ok, count);
+                                multi_selected.clear();
+                                folder_results = scanner::scan_children(&current_path);
+                                folder_results.sort_by(|a, b| b.size.cmp(&a.size));
+                                if selected >= folder_results.len() && selected > 0 { selected -= 1; }
+                            } else if selected < folder_results.len() {
+                                confirm_delete = true;
+                            }
+                        }
                     }
                     _ => {}
                 }

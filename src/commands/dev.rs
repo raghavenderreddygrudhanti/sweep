@@ -9,9 +9,7 @@ use crate::cleaners::dev as dev_cleaner;
 
 pub fn run(dry_run: bool, older_than_days: u64) {
     let mode = if dry_run { "(preview)" } else { "" };
-    println!("\n  {} {} — older than {}d",
-        "⚡ Dev Artifacts".bold().magenta(), mode.yellow(), older_than_days);
-    println!("  {}", "─".repeat(40).dimmed());
+    super::ui::print_header(&format!("\x1b[1;35m⚡ Dev Artifacts\x1b[0m {} — older than {}d", mode, older_than_days));
     print!("  ⏳ Scanning...");
     let _ = io::stdout().flush();
 
@@ -62,9 +60,9 @@ pub fn run(dry_run: bool, older_than_days: u64) {
         let sel_count = found.iter().filter(|f| f.3).count();
 
         let mut out = String::new();
-        out.push_str(&format!("\r\n  \x1b[1;35m⚡ Dev Artifacts\x1b[0m — {} selected · \x1b[1;32m{}\x1b[0m\r\n",
+        out.push_str(&super::ui::tui_header("Dev Artifacts"));
+        out.push_str(&format!("  \x1b[90m{} selected · \x1b[1;32m{}\x1b[0m\r\n",
             sel_count, ByteSize::b(sel_total)));
-        out.push_str("  \x1b[90m─────────────────────────────────────────\x1b[0m\r\n");
         out.push_str("\r\n");
 
         for (i, (path, size, kind, checked)) in found.iter().take(15).enumerate() {

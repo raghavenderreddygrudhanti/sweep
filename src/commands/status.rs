@@ -53,7 +53,19 @@ fn build_status(sys: &System) -> String {
     let mut o = String::new();
 
     // Header
-    o.push_str(&format!("\r\n  \x1b[36mStatus\x1b[0m  Health {} \x1b[1m{}\x1b[0m  \x1b[90m{} · {} · {} · macOS {} · up {}d {}h\x1b[0m\x1b[K\r\n",
+    o.push_str("\r\n");
+    o.push_str("    \x1b[36m____\x1b[0m\r\n");
+    o.push_str("   \x1b[36m/ ___|\x1b[0m_      _____  ___ _ __\r\n");
+    o.push_str("   \x1b[36m\\___ \\\x1b[0m\\ \\ /\\ / / _ \\/ _ \\ '_ \\\r\n");
+    o.push_str("    \x1b[36m___) |\x1b[0m\\ V  V /  __/  __/ |_) |\r\n");
+    o.push_str("   \x1b[36m|____/\x1b[0m  \\_/\\_/ \\___|\\___| .__/\r\n");
+    o.push_str("                           |_|\r\n");
+    o.push_str(&format!("   \x1b[32m{}\x1b[0m\r\n", "github.com/raghavenderreddygrudhanti/sweep"));
+    o.push_str("   \x1b[90mFast system cleaner · Rust · macOS + Linux\x1b[0m\r\n");
+    o.push_str("\r\n");
+    o.push_str("  \x1b[90m›\x1b[0m  \x1b[33mSystem Status\x1b[0m\r\n");
+    o.push_str("  \x1b[90m─────────────────────────────────────────────\x1b[0m\r\n");
+    o.push_str(&format!("  Health {} \x1b[1m{}\x1b[0m  \x1b[90m{} · {} · {} · macOS {} · up {}d {}h\x1b[0m\x1b[K\r\n",
         health_dot, health, host, cpu_brand, ByteSize::b(total_mem), os_ver, days, hours));
     o.push_str("\x1b[K\r\n");
 

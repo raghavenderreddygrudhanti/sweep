@@ -1,5 +1,5 @@
 use crossterm::{terminal, cursor, execute, event};
-use crossterm::event::{Event, KeyCode};
+use crossterm::event::Event;
 use std::io::{self, Write};
 
 const MENU: &[(&str, &str)] = &[
@@ -16,21 +16,13 @@ pub fn run() {
     let _ = execute!(stdout, terminal::EnterAlternateScreen, cursor::Hide);
 
     let mut selected: usize = 0;
+    let mut frame: usize = 0;
 
     loop {
-        let _ = execute!(stdout, cursor::MoveTo(0, 0), terminal::Clear(terminal::ClearType::All));
+        let _ = execute!(stdout, cursor::MoveTo(0, 0));
 
         let mut out = String::new();
-        out.push_str("\r\n");
-        out.push_str("    \x1b[36m____\x1b[0m\r\n");
-        out.push_str("   \x1b[36m/ ___|\x1b[0m_      _____  ___ _ __\r\n");
-        out.push_str("   \x1b[36m\\___ \\\x1b[0m\\ \\ /\\ / / _ \\/ _ \\ '_ \\\r\n");
-        out.push_str("    \x1b[36m___) |\x1b[0m\\ V  V /  __/  __/ |_) |\r\n");
-        out.push_str("   \x1b[36m|____/\x1b[0m  \\_/\\_/ \\___|\\___| .__/\r\n");
-        out.push_str("                           |_|\r\n");
-        out.push_str("   \x1b[32mhttps://github.com/raghavenderreddygrudhanti/sweep\x1b[0m\r\n");
-        out.push_str("   \x1b[90mFast system cleaner · Rust · macOS + Linux\x1b[0m\r\n");
-        out.push_str("\r\n");
+        out.push_str(&super::ui::tui_header_animated("", frame));
 
         for (i, (label, desc)) in MENU.iter().enumerate() {
             if i == selected {
@@ -42,42 +34,49 @@ pub fn run() {
 
         out.push_str("\r\n");
         out.push_str("  \x1b[90m↑↓  |  Enter  |  M More  |  Q Quit\x1b[0m\r\n");
+        out.push_str("\x1b[J"); // Clear rest of screen
 
         let _ = stdout.write_all(out.as_bytes());
         let _ = stdout.flush();
 
-        if let Ok(Event::Key(key)) = event::read() {
-            match key.code {
-                KeyCode::Up | KeyCode::Char('k') => {
-                    if selected > 0 { selected -= 1; }
+        // Poll with timeout for animation
+        if event::poll(std::time::Duration::from_millis(600)).unwrap_or(false) {
+            if let Ok(Event::Key(key)) = event::read() {
+                let action = super::ui::map_key(key);
+                match action {
+                    super::ui::NavAction::Up => {
+                        if selected > 0 { selected -= 1; }
+                    }
+                    super::ui::NavAction::Down => {
+                        if selected < MENU.len() - 1 { selected += 1; }
+                    }
+                    super::ui::NavAction::Char('m') | super::ui::NavAction::Char('M') => {
+                        let _ = execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show);
+                        let _ = terminal::disable_raw_mode();
+                        show_more_options();
+                        let _ = terminal::enable_raw_mode();
+                        let _ = execute!(stdout, terminal::EnterAlternateScreen, cursor::Hide);
+                    }
+                    super::ui::NavAction::Select => {
+                        let _ = execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show);
+                        let _ = terminal::disable_raw_mode();
+                        run_selected(selected);
+                        let _ = terminal::enable_raw_mode();
+                        let _ = execute!(stdout, terminal::EnterAlternateScreen, cursor::Hide);
+                    }
+                    super::ui::NavAction::Char('1') => { selected = 0; }
+                    super::ui::NavAction::Char('2') => { selected = 1; }
+                    super::ui::NavAction::Char('3') => { selected = 2; }
+                    super::ui::NavAction::Char('4') => { selected = 3; }
+                    super::ui::NavAction::Char('5') => { selected = 4; }
+                    super::ui::NavAction::Back | super::ui::NavAction::Quit => {
+                        break;
+                    }
+                    _ => {}
                 }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    if selected < MENU.len() - 1 { selected += 1; }
-                }
-                KeyCode::Char('m') | KeyCode::Char('M') => {
-                    // Show more options
-                    let _ = execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show);
-                    let _ = terminal::disable_raw_mode();
-                    show_more_options();
-                    return;
-                }
-                KeyCode::Enter => {
-                    let _ = execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show);
-                    let _ = terminal::disable_raw_mode();
-                    run_selected(selected);
-                    return;
-                }
-                KeyCode::Char('1') => { selected = 0; }
-                KeyCode::Char('2') => { selected = 1; }
-                KeyCode::Char('3') => { selected = 2; }
-                KeyCode::Char('4') => { selected = 3; }
-                KeyCode::Char('5') => { selected = 4; }
-                KeyCode::Char('q') | KeyCode::Esc => {
-                    break;
-                }
-                _ => {}
             }
         }
+        frame += 1;
     }
 
     let _ = execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show);
@@ -96,7 +95,7 @@ fn run_selected(idx: usize) {
 }
 
 fn show_more_options() {
-    println!("\n  \x1b[1mCOMMANDS\x1b[0m");
+    super::ui::print_header("\x1b[1mAll Commands\x1b[0m");
     println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep clean", "Free up disk space");
     println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep uninstall", "Remove apps completely");
     println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep optimize", "Refresh caches and services");
@@ -108,20 +107,14 @@ fn show_more_options() {
     println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep docker", "Clean Docker junk");
     println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep installer", "Find and remove installer files");
     println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep completion <shell>", "Setup shell tab completion");
-    println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep --help", "Show help");
-    println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep --version", "Show version");
     println!();
-    println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep clean --dry-run", "Preview cleanup");
-    println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep optimize --dry-run", "Preview optimization");
-    println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep uninstall --dry-run", "Preview app uninstall");
-    println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep dev --dry-run", "Preview project purge");
-    println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep installer --dry-run", "Preview installer cleanup");
-    println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep dev --older-than 30", "Only clean artifacts >30 days");
-    println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep scan ~/Downloads", "Analyze specific directory");
-    println!("  \x1b[32m{:<28}\x1b[0m {}", "sweep history", "Show operation log");
+    println!("  \x1b[1mFLAGS\x1b[0m");
+    println!("  \x1b[33m{:<28}\x1b[0m {}", "--dry-run", "Preview without deleting");
+    println!("  \x1b[33m{:<28}\x1b[0m {}", "--older-than <days>", "Min age for dev artifacts");
     println!();
-    println!("  \x1b[1mOPTIONS\x1b[0m");
-    println!("  \x1b[32m{:<28}\x1b[0m {}", "--dry-run", "Preview without deleting");
-    println!("  \x1b[32m{:<28}\x1b[0m {}", "--debug", "Show detailed operation logs");
-    println!();
+    println!("  \x1b[90mPress any key to return...\x1b[0m");
+
+    let _ = crossterm::terminal::enable_raw_mode();
+    let _ = crossterm::event::read();
+    let _ = crossterm::terminal::disable_raw_mode();
 }

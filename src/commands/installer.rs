@@ -4,13 +4,13 @@ use crate::cleaners::optimize;
 
 pub fn run(dry_run: bool) {
     let mode = if dry_run { "(preview)" } else { "" };
-    println!("\n  {} {}\n", "📦 Installer Cleanup".bold().yellow(), mode.yellow());
+    super::ui::print_header(&format!("\x1b[1;33m📦 Installer Cleanup\x1b[0m {}", mode));
 
     let installers = optimize::find_installers();
 
     if installers.is_empty() {
-        println!("  ✨ No installer files found.\n");
-        
+        println!("  ✨ No installer files found.");
+        super::ui::wait_any_key();
         return;
     }
 
@@ -24,12 +24,12 @@ pub fn run(dry_run: bool) {
 
     println!("\n  {}", "─".repeat(40).dimmed());
     if dry_run {
-        println!("  💾 {} files · Would free: {}\n",
+        println!("  💾 {} files · Would free: {}",
             installers.len(), ByteSize::b(total).to_string().bold().green());
     } else {
         for (path, _) in &installers { let _ = std::fs::remove_file(path); }
-        println!("  🎉 Freed: {}\n", ByteSize::b(total).to_string().bold().green());
+        println!("  🎉 Freed: {}", ByteSize::b(total).to_string().bold().green());
     }
 
-    
+    super::ui::wait_any_key();
 }

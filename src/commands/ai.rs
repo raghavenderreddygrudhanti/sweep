@@ -5,14 +5,14 @@ use crate::cleaners::ai;
 
 pub fn run(dry_run: bool) {
     let mode = if dry_run { "(preview)" } else { "" };
-    println!("\n  {} {}\n", "🤖 AI/ML Cache Clean".bold().purple(), mode.yellow());
+    super::ui::print_header(&format!("\x1b[1;35m🤖 AI/ML Cache Clean\x1b[0m {}", mode));
 
     let caches = ai::ai_cache_paths();
     let mut total: u64 = 0;
 
     if caches.is_empty() {
-        println!("  ✨ No AI/ML caches found.\n");
-        
+        println!("  ✨ No AI/ML caches found.");
+        super::ui::wait_any_key();
         return;
     }
 
@@ -39,8 +39,8 @@ pub fn run(dry_run: bool) {
                 let _ = std::fs::remove_dir_all(path);
             }
         }
-        println!("  🎉 Freed: {}\n", ByteSize::b(total).to_string().bold().green());
+        println!("  🎉 Freed: {}", ByteSize::b(total).to_string().bold().green());
     }
 
-    
+    super::ui::wait_any_key();
 }

@@ -9,3 +9,4 @@ pub mod uninstall;
 pub mod optimize;
 pub mod installer;
 pub mod footer;
+pub mod ui;

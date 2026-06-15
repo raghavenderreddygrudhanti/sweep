@@ -95,7 +95,7 @@ fn main() {
         Some(Commands::Installer { dry_run }) => commands::installer::run(dry_run),
         Some(Commands::Status) => commands::status::run(),
         Some(Commands::History) => {
-            println!("\n  \x1b[1mOperation History\x1b[0m\n");
+            commands::ui::print_header("\x1b[1mOperation History\x1b[0m");
             history::show_history();
             println!();
         },

@@ -6,9 +6,7 @@ use crossterm::event::{Event, KeyCode};
 use crate::scanner;
 
 pub fn run(_dry_run: bool) {
-    println!();
-    println!("  \x1b[35m\x1b[1mClean Your Mac\x1b[0m");
-    println!();
+    super::ui::print_header("\x1b[1;35mClean Your Mac\x1b[0m");
 
     let home = dirs::home_dir().unwrap_or_default();
     let mut total_freed: u64 = 0;
@@ -129,6 +127,11 @@ pub fn run(_dry_run: bool) {
         let _ = io::stdout().flush();
 
         let _ = terminal::enable_raw_mode();
+        // Drain any buffered events from scrolling output
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        while event::poll(std::time::Duration::from_millis(50)).unwrap_or(false) {
+            let _ = event::read();
+        }
         let proceed = loop {
             if let Ok(Event::Key(key)) = event::read() {
                 match key.code {
@@ -141,18 +144,19 @@ pub fn run(_dry_run: bool) {
         println!();
 
         if proceed {
-            println!("\n  🧹 Cleaning...");
+            println!("\n  {}", super::ui::action_name("clean"));
             // Actually delete everything
             actual_clean();
-            println!("  \x1b[1;32m🎉 Freed: {}\x1b[0m\n", ByteSize::b(total_freed));
+            println!("  \x1b[1;32m🎉 Done! Reclaimed: {}\x1b[0m", ByteSize::b(total_freed));
         } else {
-            println!("\n  \x1b[90mCancelled.\x1b[0m\n");
+            println!("\n  \x1b[90mCancelled.\x1b[0m");
         }
     } else {
         println!("  \x1b[32m✓ System already clean\x1b[0m");
         println!("  ═══════════════════════════════════════════════");
-        println!();
     }
+
+    super::ui::wait_any_key();
 }
 
 /// Actually delete all cleanable items.
@@ -225,6 +229,7 @@ fn clean_item(name: &str, path: &PathBuf, dry_run: bool) -> u64 {
                     }
                 }
             }
+            crate::history::log_delete(path.to_str().unwrap_or(""), size, "clean");
         }
     } else {
         println!("    ✓ {} · nothing to clean", name);

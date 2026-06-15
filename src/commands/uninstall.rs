@@ -1,27 +1,30 @@
 use std::io::{self, Write};
 use bytesize::ByteSize;
 use crossterm::{terminal, cursor, execute, event};
-use crossterm::event::{Event, KeyCode};
+use crossterm::event::Event;
 use crate::cleaners::apps;
 
 pub fn run(dry_run: bool) {
-    let mode = if dry_run { "(preview)" } else { "" };
-    println!("\n  {} {}", "🗑  App Uninstaller".bold_red(), mode);
-    print!("  ⏳ Scanning /Applications...");
-    let _ = io::stdout().flush();
-
-    let apps_list = apps::find_installed_apps();
-    println!("\r  Found {} apps\x1b[K\n", apps_list.len());
-
-    if apps_list.is_empty() {
-        println!("  No apps found.\n");
-        return;
-    }
-
-    // Interactive selection
+    // Go straight to TUI — scan in background
     let _ = terminal::enable_raw_mode();
     let mut stdout = io::stdout();
     let _ = execute!(stdout, terminal::EnterAlternateScreen, cursor::Hide);
+
+    // Show loading screen
+    let mut out = String::new();
+    out.push_str(&super::ui::tui_header("App Uninstaller"));
+    out.push_str("  ⏳ Scanning /Applications...\r\n");
+    let _ = stdout.write_all(out.as_bytes());
+    let _ = stdout.flush();
+
+    let apps_list = apps::find_installed_apps();
+
+    if apps_list.is_empty() {
+        let _ = execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show);
+        let _ = terminal::disable_raw_mode();
+        println!("  No apps found.\n");
+        return;
+    }
 
     let mut selected: usize = 0;
     let mut marked: Vec<bool> = vec![false; apps_list.len()];
@@ -37,11 +40,12 @@ pub fn run(dry_run: bool) {
             .sum();
 
         let mut out = String::new();
-        out.push_str(&format!("\r\n  \x1b[1;31m🗑  App Uninstaller\x1b[0m  {} apps", apps_list.len()));
+        out.push_str(&super::ui::tui_header("App Uninstaller"));
+        out.push_str(&format!("  \x1b[90m{} apps\x1b[0m", apps_list.len()));
         if marked_count > 0 {
             out.push_str(&format!(" · \x1b[1;32m{} selected ({})\x1b[0m", marked_count, ByteSize::b(marked_size)));
         }
-        out.push_str("\r\n  \x1b[90m─────────────────────────────────────────\x1b[0m\r\n\r\n");
+        out.push_str("\r\n\r\n");
 
         // Scroll window
         let scroll_start = if selected >= max_display { selected - max_display + 1 } else { 0 };
@@ -75,38 +79,37 @@ pub fn run(dry_run: bool) {
         }
 
         // Footer
-        out.push_str("\r\n  \x1b[90m─────────────────────────────────────────\x1b[0m\r\n");
+        out.push_str(super::ui::footer_sep());
         if marked_count > 0 {
-            out.push_str(&format!("  💾 {} apps · {}\r\n", marked_count, ByteSize::b(marked_size)));
-            out.push_str("  \x1b[33mSpace\x1b[0m toggle · \x1b[33mEnter/d\x1b[0m \x1b[31mDELETE selected\x1b[0m · a all · n none · q quit\r\n");
+            out.push_str(&super::ui::footer_selected(marked_count));
         } else {
-            out.push_str("  \x1b[33mSpace\x1b[0m select apps · \x1b[33mEnter/d\x1b[0m delete · a all · q quit\r\n");
+            out.push_str(super::ui::footer_list());
         }
 
         let _ = stdout.write_all(out.as_bytes());
         let _ = stdout.flush();
 
         if let Ok(Event::Key(key)) = event::read() {
-            match key.code {
-                KeyCode::Up | KeyCode::Char('k') => {
+            let action = super::ui::map_key(key);
+            match action {
+                super::ui::NavAction::Up => {
                     if selected > 0 { selected -= 1; }
                 }
-                KeyCode::Down | KeyCode::Char('j') => {
+                super::ui::NavAction::Down => {
                     if selected < apps_list.len() - 1 { selected += 1; }
                 }
-                KeyCode::Char(' ') => {
+                super::ui::NavAction::Toggle => {
                     marked[selected] = !marked[selected];
                 }
-                KeyCode::Char('a') => {
+                super::ui::NavAction::SelectAll => {
                     for m in marked.iter_mut() { *m = true; }
                 }
-                KeyCode::Char('n') => {
+                super::ui::NavAction::ClearAll => {
                     for m in marked.iter_mut() { *m = false; }
                 }
-                KeyCode::Enter | KeyCode::Char('d') | KeyCode::Char('D') => {
+                super::ui::NavAction::Select | super::ui::NavAction::Delete => {
                     if marked_count > 0 {
-                        // Confirm before deleting
-                        
+                        // Show confirmation in the TUI footer
                         let _ = stdout.write_all(format!(
                             "\r\n  \x1b[1;31m⚠ Delete {} app(s)? (y/n):\x1b[0m ", marked_count
                         ).as_bytes());
@@ -114,86 +117,115 @@ pub fn run(dry_run: bool) {
 
                         let confirm = loop {
                             if let Ok(Event::Key(k)) = event::read() {
-                                match k.code {
-                                    KeyCode::Char('y') | KeyCode::Char('Y') => break true,
+                                let a = super::ui::map_key(k);
+                                match a {
+                                    super::ui::NavAction::Char('y') | super::ui::NavAction::Char('Y') => break true,
                                     _ => break false,
                                 }
                             }
                         };
 
                         if confirm {
-                            let _ = execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show);
-                            let _ = terminal::disable_raw_mode();
+                            // Show progress in the TUI
+                            let _ = execute!(stdout, cursor::MoveTo(0, 0), terminal::Clear(terminal::ClearType::All));
+                            let mut progress = super::ui::tui_header("App Uninstaller");
+                            progress.push_str(&format!("  {}\r\n\r\n", super::ui::action_name("uninstall")));
+                            let _ = stdout.write_all(progress.as_bytes());
+                            let _ = stdout.flush();
 
-                            println!("\n  Uninstalling {} apps...", marked_count);
                             for (i, app) in apps_list.iter().enumerate() {
                                 if marked[i] {
-                                    let _ = std::process::Command::new("osascript")
-                                        .args(["-e", &format!(
-                                            "tell application \"Finder\" to delete POSIX file \"{}\"",
-                                            app.path.display()
-                                        )]).output();
+                                    // Use mv to Trash instead of osascript
+                                    let trash = dirs::home_dir().unwrap_or_default().join(".Trash");
+                                    let dest = trash.join(app.path.file_name().unwrap_or_default());
+                                    let _ = std::process::Command::new("mv")
+                                        .arg(&app.path)
+                                        .arg(&dest)
+                                        .output();
                                     let remnants = apps::find_app_remnants(app);
                                     for r in &remnants {
-                                        let _ = std::process::Command::new("osascript")
-                                            .args(["-e", &format!(
-                                                "tell application \"Finder\" to delete POSIX file \"{}\"",
-                                                r.display()
-                                            )]).output();
+                                        let rdest = trash.join(r.file_name().unwrap_or_default());
+                                        let _ = std::process::Command::new("mv")
+                                            .arg(r)
+                                            .arg(&rdest)
+                                            .output();
                                     }
-                                    println!("  ✓ {} (+{} remnants)", app.name, remnants.len());
+                                    crate::history::log_delete(&app.path.display().to_string(), app.size, "uninstall");
+                                    let msg = format!("  ✓ {} (+{} remnants)\r\n", app.name, remnants.len());
+                                    let _ = stdout.write_all(msg.as_bytes());
+                                    let _ = stdout.flush();
                                 }
                             }
-                            println!("\n  🎉 Done! Apps moved to Trash.\n");
-                            return;
+
+                            let _ = stdout.write_all(b"\r\n  \x1b[1;32m\xf0\x9f\x8e\x89 Done! Apps moved to Trash.\x1b[0m\r\n");
+                            let _ = stdout.write_all(b"\r\n  \x1b[90mPress any key to return...\x1b[0m\r\n");
+                            let _ = stdout.flush();
+                            // Drain + wait
+                            std::thread::sleep(std::time::Duration::from_millis(200));
+                            while event::poll(std::time::Duration::from_millis(100)).unwrap_or(false) {
+                                let _ = event::read();
+                            }
+                            let _ = event::read(); // wait for keypress
                         }
-                        // If cancelled, just continue
+                        break;
                     } else if selected < apps_list.len() {
-                        // No selection — delete currently highlighted app
+                        // Single app — confirm in TUI
                         let app = &apps_list[selected];
+                        let _ = stdout.write_all(format!(
+                            "\r\n  \x1b[1;31m⚠ Delete {}? (y/n):\x1b[0m ", app.name
+                        ).as_bytes());
+                        let _ = stdout.flush();
 
-                        // Leave alternate screen to show confirm in normal terminal
-                        let _ = execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show);
-                        let _ = terminal::disable_raw_mode();
-
-                        print!("\n  \x1b[1;31m⚠ Delete {}? (y/n):\x1b[0m ", app.name);
-                        let _ = io::stdout().flush();
-
-                        let _ = terminal::enable_raw_mode();
                         let confirm = loop {
                             if let Ok(Event::Key(k)) = event::read() {
-                                match k.code {
-                                    KeyCode::Char('y') | KeyCode::Char('Y') => break true,
+                                let a = super::ui::map_key(k);
+                                match a {
+                                    super::ui::NavAction::Char('y') | super::ui::NavAction::Char('Y') => break true,
                                     _ => break false,
                                 }
                             }
                         };
-                        let _ = terminal::disable_raw_mode();
 
                         if confirm {
-                            println!("yes\n");
-                            println!("  Uninstalling {}...", app.name);
-                            let _ = std::process::Command::new("osascript")
-                                .args(["-e", &format!(
-                                    "tell application \"Finder\" to delete POSIX file \"{}\"",
-                                    app.path.display()
-                                )]).output();
+                            // Clear screen and show progress
+                            let _ = execute!(stdout, cursor::MoveTo(0, 0), terminal::Clear(terminal::ClearType::All));
+                            let mut progress = super::ui::tui_header("App Uninstaller");
+                            progress.push_str(&format!("  {}\r\n\r\n", super::ui::action_name("uninstall")));
+                            let _ = stdout.write_all(progress.as_bytes());
+                            let _ = stdout.flush();
+
+                            let trash = dirs::home_dir().unwrap_or_default().join(".Trash");
+                            let dest = trash.join(app.path.file_name().unwrap_or_default());
+                            let _ = std::process::Command::new("mv")
+                                .arg(&app.path)
+                                .arg(&dest)
+                                .output();
                             let remnants = apps::find_app_remnants(app);
                             for r in &remnants {
-                                let _ = std::process::Command::new("osascript")
-                                    .args(["-e", &format!(
-                                        "tell application \"Finder\" to delete POSIX file \"{}\"",
-                                        r.display()
-                                    )]).output();
+                                let rdest = trash.join(r.file_name().unwrap_or_default());
+                                let _ = std::process::Command::new("mv")
+                                    .arg(r)
+                                    .arg(&rdest)
+                                    .output();
                             }
-                            println!("  ✓ {} (+{} remnants) moved to Trash\n", app.name, remnants.len());
-                        } else {
-                            println!("no\n  Cancelled.\n");
+                            crate::history::log_delete(&app.path.display().to_string(), app.size, "uninstall");
+
+                            let _ = stdout.write_all(format!(
+                                "  \x1b[1;32m✓ {} (+{} remnants) moved to Trash\x1b[0m\r\n\r\n  \x1b[90mPress any key to return...\x1b[0m\r\n",
+                                app.name, remnants.len()
+                            ).as_bytes());
+                            let _ = stdout.flush();
+                            // Drain + wait
+                            std::thread::sleep(std::time::Duration::from_millis(200));
+                            while event::poll(std::time::Duration::from_millis(100)).unwrap_or(false) {
+                                let _ = event::read();
+                            }
+                            let _ = event::read();
                         }
-                        return;
+                        break;
                     }
                 }
-                KeyCode::Char('q') | KeyCode::Esc => break,
+                super::ui::NavAction::Back | super::ui::NavAction::Quit => break,
                 _ => {}
             }
         }
