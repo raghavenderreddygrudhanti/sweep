@@ -1,0 +1,143 @@
+use std::time::{SystemTime, Duration, Instant};
+use std::io::{self, Write};
+use bytesize::ByteSize;
+use colored::*;
+use crossterm::{terminal, cursor, execute, event};
+use crossterm::event::{Event, KeyCode};
+use crate::scanner;
+use crate::cleaners::dev as dev_cleaner;
+
+pub fn run(dry_run: bool, older_than_days: u64) {
+    let mode = if dry_run { "(preview)" } else { "" };
+    println!("\n  {} {} — older than {}d",
+        "⚡ Dev Artifacts".bold().magenta(), mode.yellow(), older_than_days);
+    println!("  {}", "─".repeat(40).dimmed());
+    print!("  ⏳ Scanning...");
+    let _ = io::stdout().flush();
+
+    let start = Instant::now();
+    let roots = dev_cleaner::scan_roots();
+    let mut found: Vec<(String, u64, String, bool)> = vec![];
+
+    let threshold = SystemTime::now()
+        .checked_sub(Duration::from_secs(older_than_days * 86400))
+        .unwrap_or(SystemTime::UNIX_EPOCH);
+
+    for name in dev_cleaner::DEV_ARTIFACTS {
+        for root in &roots {
+            let matches = scanner::find_dirs_by_name(root, name, 4);
+            for m in matches {
+                let p = std::path::Path::new(&m.path);
+                let is_old = p.metadata()
+                    .and_then(|meta| meta.modified())
+                    .map(|t| t < threshold)
+                    .unwrap_or(false);
+                if is_old && m.size > 10_000_000 {
+                    found.push((m.path.clone(), m.size, name.to_string(), true));
+                }
+            }
+        }
+    }
+
+    found.sort_by(|a, b| b.1.cmp(&a.1));
+    let elapsed = start.elapsed().as_secs_f64();
+    println!(" found {} items in {:.1}s", found.len(), elapsed);
+
+    if found.is_empty() {
+        println!("\n  ✨ No old build artifacts found.\n");
+        super::footer::wait_for_key();
+        return;
+    }
+
+    // Switch to alternate screen for interactive selection
+    let _ = terminal::enable_raw_mode();
+    let mut stdout = io::stdout();
+    let _ = execute!(stdout, terminal::EnterAlternateScreen, cursor::Hide);
+
+    let mut selected: usize = 0;
+
+    loop {
+        let _ = execute!(stdout, cursor::MoveTo(0, 0), terminal::Clear(terminal::ClearType::All));
+
+        let sel_total: u64 = found.iter().filter(|f| f.3).map(|f| f.1).sum();
+        let sel_count = found.iter().filter(|f| f.3).count();
+
+        let mut out = String::new();
+        out.push_str(&format!("\r\n  \x1b[1;35m⚡ Dev Artifacts\x1b[0m — {} selected · \x1b[1;32m{}\x1b[0m\r\n",
+            sel_count, ByteSize::b(sel_total)));
+        out.push_str("  \x1b[90m─────────────────────────────────────────\x1b[0m\r\n");
+        out.push_str("\r\n");
+
+        for (i, (path, size, kind, checked)) in found.iter().take(15).enumerate() {
+            let short = path.replace(&dirs::home_dir().unwrap_or_default().to_string_lossy().to_string(), "~");
+            let short_display = if short.len() > 45 { &short[short.len()-45..] } else { &short };
+
+            let ptr = if i == selected { " \x1b[32m▶\x1b[0m" } else { "  " };
+            let chk = if *checked { "\x1b[32m●\x1b[0m" } else { "\x1b[90m○\x1b[0m" };
+            let size_str = ByteSize::b(*size).to_string();
+
+            out.push_str(&format!("{} {} \x1b[1m{:>8}\x1b[0m  {} \x1b[36m({})\x1b[0m\r\n",
+                ptr, chk, size_str, short_display, kind));
+        }
+
+        if found.len() > 15 {
+            out.push_str(&format!("  \x1b[90m  ... +{} more\x1b[0m\r\n", found.len() - 15));
+        }
+
+        out.push_str("\r\n  \x1b[90m─────────────────────────────────────────\x1b[0m\r\n");
+        out.push_str(&format!("  💾 {} dirs · \x1b[1;32m{}\x1b[0m\r\n\r\n", sel_count, ByteSize::b(sel_total)));
+        out.push_str("  \x1b[90m↑↓ move · Space select · a all · n none · Enter clean · q quit\x1b[0m\r\n");
+
+        let _ = stdout.write_all(out.as_bytes());
+        let _ = stdout.flush();
+
+        if let Ok(Event::Key(key)) = event::read() {
+            match key.code {
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if selected > 0 { selected -= 1; }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if selected < found.len().min(15) - 1 { selected += 1; }
+                }
+                KeyCode::Char(' ') => {
+                    if selected < found.len() {
+                        found[selected].3 = !found[selected].3;
+                    }
+                }
+                KeyCode::Char('a') => {
+                    for f in found.iter_mut() { f.3 = true; }
+                }
+                KeyCode::Char('n') => {
+                    for f in found.iter_mut() { f.3 = false; }
+                }
+                KeyCode::Enter => {
+                    let _ = execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show);
+                    let _ = terminal::disable_raw_mode();
+
+                    if dry_run {
+                        let sel_total: u64 = found.iter().filter(|f| f.3).map(|f| f.1).sum();
+                        println!("\n  💾 Would free: {}", ByteSize::b(sel_total).to_string().bold().green());
+                        println!("  Run `sweep dev` (without --dry-run) to delete.\n");
+                    } else {
+                        let mut freed: u64 = 0;
+                        for (path, size, _, checked) in &found {
+                            if *checked {
+                                let _ = std::fs::remove_dir_all(path);
+                                freed += size;
+                            }
+                        }
+                        println!("\n  🎉 Freed: {}\n", ByteSize::b(freed).to_string().bold().green());
+                    }
+                    return;
+                }
+                KeyCode::Char('q') | KeyCode::Esc => {
+                    break;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let _ = execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show);
+    let _ = terminal::disable_raw_mode();
+}
