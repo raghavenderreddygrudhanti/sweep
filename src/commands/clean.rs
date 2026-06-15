@@ -1,16 +1,13 @@
 use bytesize::ByteSize;
 use std::io::{self, Write};
 use std::path::PathBuf;
+use crossterm::{terminal, event};
+use crossterm::event::{Event, KeyCode};
 use crate::scanner;
 
-pub fn run(dry_run: bool) {
+pub fn run(_dry_run: bool) {
     println!();
     println!("  \x1b[35m\x1b[1mClean Your Mac\x1b[0m");
-    println!();
-    if dry_run {
-        println!("  \x1b[90m● Use --dry-run to preview, --whitelist to manage protected paths\x1b[0m");
-    }
-    println!("  \x1b[90m▸ System caches need sudo. Enter continue, Space skip:\x1b[0m");
     println!();
 
     let home = dirs::home_dir().unwrap_or_default();
@@ -18,22 +15,22 @@ pub fn run(dry_run: bool) {
 
     // ─── System ────────────────────────────────────────────
     println!("  \x1b[1;32m▸ System\x1b[0m");
-    total_freed += clean_item("System crash reports", &home.join("Library/Logs/DiagnosticReports"), dry_run);
-    total_freed += clean_item("System logs", &PathBuf::from("/var/log"), dry_run);
-    total_freed += clean_item("System diagnostic logs", &home.join("Library/Logs"), dry_run);
-    total_freed += clean_item("Power logs", &home.join("Library/Logs/powermanagement"), dry_run);
+    total_freed += clean_item("System crash reports", &home.join("Library/Logs/DiagnosticReports"), true);
+    total_freed += clean_item("System logs", &PathBuf::from("/var/log"), true);
+    total_freed += clean_item("System diagnostic logs", &home.join("Library/Logs"), true);
+    total_freed += clean_item("Power logs", &home.join("Library/Logs/powermanagement"), true);
     println!();
 
     // ─── User essentials ───────────────────────────────────
     println!("  \x1b[1;32m▸ User essentials\x1b[0m");
-    total_freed += clean_item("User app cache", &home.join("Library/Caches"), dry_run);
-    total_freed += clean_item("User app logs", &home.join("Library/Logs"), dry_run);
+    total_freed += clean_item("User app cache", &home.join("Library/Caches"), true);
+    total_freed += clean_item("User app logs", &home.join("Library/Logs"), true);
 
     let trash = home.join(".Trash");
     let trash_size = scanner::scan_size(&trash).0;
     if trash_size > 0 {
         println!("    ✓ Trash, \x1b[32m{}\x1b[0m", ByteSize::b(trash_size));
-        if !dry_run { crate::cleaners::trash::empty_trash(false); }
+        // trash cleaned in actual_clean()
         total_freed += trash_size;
     } else {
         println!("    ✓ Trash · already empty");
@@ -44,7 +41,7 @@ pub fn run(dry_run: bool) {
     println!("  \x1b[1;32m▸ App caches\x1b[0m");
     let app_caches = crate::cleaners::apps_cache::app_cache_paths();
     for (path, name) in &app_caches {
-        total_freed += clean_item(name, path, dry_run);
+        total_freed += clean_item(name, path, true);
     }
     if app_caches.is_empty() {
         println!("    ✓ Nothing to clean");
@@ -59,7 +56,7 @@ pub fn run(dry_run: bool) {
         let size = scanner::scan_size(path).0;
         if size > 100_000 {
             println!("    ✓ {}, \x1b[32m{}\x1b[0m", name, ByteSize::b(size));
-            if !dry_run { let _ = std::fs::remove_dir_all(path); }
+            // cleaned in actual_clean()
             total_freed += size;
             any_browser = true;
         }
@@ -71,20 +68,20 @@ pub fn run(dry_run: bool) {
 
     // ─── Developer tools ───────────────────────────────────
     println!("  \x1b[1;32m▸ Developer tools\x1b[0m");
-    total_freed += clean_item("npm cache", &home.join(".npm/_cacache"), dry_run);
-    total_freed += clean_item("pip cache", &home.join("Library/Caches/pip"), dry_run);
-    total_freed += clean_item("Cargo registry cache", &home.join(".cargo/registry/cache"), dry_run);
-    total_freed += clean_item("Go build cache", &home.join("Library/Caches/go-build"), dry_run);
-    total_freed += clean_item("Gradle cache", &home.join(".gradle/caches"), dry_run);
-    total_freed += clean_item("Maven cache", &home.join(".m2/repository"), dry_run);
-    total_freed += clean_item("CocoaPods cache", &home.join("Library/Caches/CocoaPods"), dry_run);
+    total_freed += clean_item("npm cache", &home.join(".npm/_cacache"), true);
+    total_freed += clean_item("pip cache", &home.join("Library/Caches/pip"), true);
+    total_freed += clean_item("Cargo registry cache", &home.join(".cargo/registry/cache"), true);
+    total_freed += clean_item("Go build cache", &home.join("Library/Caches/go-build"), true);
+    total_freed += clean_item("Gradle cache", &home.join(".gradle/caches"), true);
+    total_freed += clean_item("Maven cache", &home.join(".m2/repository"), true);
+    total_freed += clean_item("CocoaPods cache", &home.join("Library/Caches/CocoaPods"), true);
     println!();
 
     // ─── AI/ML ─────────────────────────────────────────────
     println!("  \x1b[1;32m▸ AI/ML\x1b[0m");
-    total_freed += clean_item("HuggingFace cache", &home.join(".cache/huggingface"), dry_run);
-    total_freed += clean_item("Ollama models", &home.join(".ollama/models"), dry_run);
-    total_freed += clean_item("PyTorch cache", &home.join(".cache/torch"), dry_run);
+    total_freed += clean_item("HuggingFace cache", &home.join(".cache/huggingface"), true);
+    total_freed += clean_item("Ollama models", &home.join(".ollama/models"), true);
+    total_freed += clean_item("PyTorch cache", &home.join(".cache/torch"), true);
     println!();
 
     // ─── Xcode ─────────────────────────────────────────────
@@ -92,7 +89,7 @@ pub fn run(dry_run: bool) {
     if !xcode_paths.is_empty() {
         println!("  \x1b[1;32m▸ Xcode\x1b[0m");
         for (path, name) in &xcode_paths {
-            total_freed += clean_item(name, path, dry_run);
+            total_freed += clean_item(name, path, true);
         }
         println!();
     }
@@ -102,7 +99,7 @@ pub fn run(dry_run: bool) {
     if !jb_paths.is_empty() {
         println!("  \x1b[1;32m▸ JetBrains\x1b[0m");
         for (path, name) in &jb_paths {
-            total_freed += clean_item(name, path, dry_run);
+            total_freed += clean_item(name, path, true);
         }
         println!();
     }
@@ -110,7 +107,7 @@ pub fn run(dry_run: bool) {
     // ─── Homebrew ──────────────────────────────────────────
     if crate::cleaners::homebrew::brew_cache_path().is_some() {
         println!("  \x1b[1;32m▸ Homebrew\x1b[0m");
-        let brew_size = crate::cleaners::homebrew::brew_cleanup(dry_run);
+        let brew_size = crate::cleaners::homebrew::brew_cleanup(true);
         if brew_size > 0 {
             println!("    ✓ Homebrew cache, \x1b[32m{}\x1b[0m", ByteSize::b(brew_size));
             total_freed += brew_size;
@@ -123,19 +120,83 @@ pub fn run(dry_run: bool) {
     // ─── Summary ───────────────────────────────────────────
     println!("  ═══════════════════════════════════════════════");
     if total_freed > 0 {
-        if dry_run {
-            println!("  \x1b[1;32mWould free: {}\x1b[0m", ByteSize::b(total_freed));
-            println!("  Run `sweep clean` without --dry-run to apply.");
+        println!("  \x1b[1;32mWould free: {}\x1b[0m", ByteSize::b(total_freed));
+        println!("  ═══════════════════════════════════════════════");
+        println!();
+
+        // Ask for confirmation
+        print!("  \x1b[1;33mClean now? (y/n):\x1b[0m ");
+        let _ = io::stdout().flush();
+
+        let _ = terminal::enable_raw_mode();
+        let proceed = loop {
+            if let Ok(Event::Key(key)) = event::read() {
+                match key.code {
+                    KeyCode::Char('y') | KeyCode::Char('Y') => break true,
+                    _ => break false,
+                }
+            }
+        };
+        let _ = terminal::disable_raw_mode();
+        println!();
+
+        if proceed {
+            println!("\n  🧹 Cleaning...");
+            // Actually delete everything
+            actual_clean();
+            println!("  \x1b[1;32m🎉 Freed: {}\x1b[0m\n", ByteSize::b(total_freed));
         } else {
-            println!("  \x1b[1;32mSpace freed: {}\x1b[0m", ByteSize::b(total_freed));
+            println!("\n  \x1b[90mCancelled.\x1b[0m\n");
         }
     } else {
         println!("  \x1b[32m✓ System already clean\x1b[0m");
+        println!("  ═══════════════════════════════════════════════");
+        println!();
     }
-    println!("  ═══════════════════════════════════════════════");
-    println!();
 }
 
+/// Actually delete all cleanable items.
+fn actual_clean() {
+    let home = dirs::home_dir().unwrap_or_default();
+
+    let paths_to_clean: Vec<PathBuf> = vec![
+        home.join("Library/Logs/DiagnosticReports"),
+        home.join("Library/Logs"),
+        home.join("Library/Caches"),
+    ];
+
+    for path in &paths_to_clean {
+        if path.exists() {
+            if let Ok(entries) = std::fs::read_dir(path) {
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    if p.is_dir() { let _ = std::fs::remove_dir_all(&p); }
+                    else { let _ = std::fs::remove_file(&p); }
+                }
+            }
+        }
+    }
+
+    // Browser caches
+    let browsers = crate::cleaners::browser::browser_cache_paths();
+    for (path, _) in &browsers {
+        let _ = std::fs::remove_dir_all(path);
+    }
+
+    // App caches
+    let app_caches = crate::cleaners::apps_cache::app_cache_paths();
+    for (path, _) in &app_caches {
+        let _ = std::fs::remove_dir_all(path);
+    }
+
+    // Trash
+    crate::cleaners::trash::empty_trash(false);
+
+    // Homebrew
+    if crate::cleaners::homebrew::brew_cache_path().is_some() {
+        crate::cleaners::homebrew::brew_cleanup(false);
+    }
+}
 /// Clean a single path and show result inline.
 fn clean_item(name: &str, path: &PathBuf, dry_run: bool) -> u64 {
     if !path.exists() {

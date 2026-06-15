@@ -78,10 +78,10 @@ pub fn run(dry_run: bool) {
         // Footer
         out.push_str("\r\n  \x1b[90m─────────────────────────────────────────\x1b[0m\r\n");
         if marked_count > 0 {
-            out.push_str(&format!("  💾 {} apps · {}\r\n\r\n", marked_count, ByteSize::b(marked_size)));
-            out.push_str("  \x1b[90m↑↓ nav · Space select · Enter uninstall · a all · n none · q quit\x1b[0m\r\n");
+            out.push_str(&format!("  💾 {} apps · {}\r\n", marked_count, ByteSize::b(marked_size)));
+            out.push_str("  \x1b[33mSpace\x1b[0m toggle · \x1b[33mEnter/d\x1b[0m \x1b[31mDELETE selected\x1b[0m · a all · n none · q quit\r\n");
         } else {
-            out.push_str("\r\n  \x1b[90m↑↓ nav · Space select · a all · q quit\x1b[0m\r\n");
+            out.push_str("  \x1b[33mSpace\x1b[0m select apps · \x1b[33mEnter/d\x1b[0m delete · a all · q quit\r\n");
         }
 
         let _ = stdout.write_all(out.as_bytes());
@@ -104,7 +104,7 @@ pub fn run(dry_run: bool) {
                 KeyCode::Char('n') => {
                     for m in marked.iter_mut() { *m = false; }
                 }
-                KeyCode::Enter => {
+                KeyCode::Enter | KeyCode::Char('d') | KeyCode::Char('D') => {
                     if marked_count > 0 {
                         let _ = execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show);
                         let _ = terminal::disable_raw_mode();

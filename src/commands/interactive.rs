@@ -67,16 +67,20 @@ pub fn run() {
 
                     run_selected(selected);
 
-                    // Wait for user to press any key before returning to menu
-                    println!("\n  \x1b[90mPress any key to return to menu...\x1b[0m");
+                    // Show prompt and wait for keypress
+                    print!("\n  \x1b[90mPress any key to return to menu...\x1b[0m");
+                    let _ = std::io::Write::flush(&mut io::stdout());
+
+                    // Wait 500ms to ensure output is visible + drain stale keys
+                    std::thread::sleep(std::time::Duration::from_millis(500));
                     let _ = terminal::enable_raw_mode();
-                    // Drain buffered keys
-                    std::thread::sleep(std::time::Duration::from_millis(200));
-                    while event::poll(std::time::Duration::from_millis(50)).unwrap_or(false) {
+                    while event::poll(std::time::Duration::from_millis(100)).unwrap_or(false) {
                         let _ = event::read();
                     }
-                    // Wait for fresh keypress
-                    let _ = event::read();
+                    // Block until fresh keypress
+                    loop {
+                        if let Ok(Event::Key(_)) = event::read() { break; }
+                    }
                     let _ = terminal::disable_raw_mode();
 
                     // Re-enter menu
@@ -102,11 +106,11 @@ pub fn run() {
 
 fn run_selected(idx: usize) {
     match idx {
-        0 => super::clean::run(true),
-        1 => super::uninstall::run(true),
-        2 => super::optimize::run(true),
-        3 => super::scan::run("~"),  // Has its own alternate screen
-        4 => super::status::run(),   // Has its own alternate screen
+        0 => super::clean::run(false),     // Actually clean (has confirmation inside)
+        1 => super::uninstall::run(false), // Actually uninstall (user selects + confirms)
+        2 => super::optimize::run(false),  // Actually optimize
+        3 => super::scan::run("~"),
+        4 => super::status::run(),
         _ => {}
     }
 }
