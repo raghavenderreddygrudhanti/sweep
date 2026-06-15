@@ -64,15 +64,24 @@ pub fn run() {
                 KeyCode::Enter => {
                     let _ = execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show);
                     let _ = terminal::disable_raw_mode();
+
                     run_selected(selected);
-                    // After command finishes, re-enter menu
+
+                    // Wait for user to press any key before returning to menu
+                    println!("\n  \x1b[90mPress any key to return to menu...\x1b[0m");
                     let _ = terminal::enable_raw_mode();
-                    let _ = execute!(stdout, terminal::EnterAlternateScreen, cursor::Hide);
-                    // Drain leftover keys
-                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    // Drain buffered keys
+                    std::thread::sleep(std::time::Duration::from_millis(200));
                     while event::poll(std::time::Duration::from_millis(50)).unwrap_or(false) {
                         let _ = event::read();
                     }
+                    // Wait for fresh keypress
+                    let _ = event::read();
+                    let _ = terminal::disable_raw_mode();
+
+                    // Re-enter menu
+                    let _ = terminal::enable_raw_mode();
+                    let _ = execute!(stdout, terminal::EnterAlternateScreen, cursor::Hide);
                 }
                 KeyCode::Char('1') => { selected = 0; }
                 KeyCode::Char('2') => { selected = 1; }
