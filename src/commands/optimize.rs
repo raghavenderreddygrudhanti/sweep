@@ -109,5 +109,5 @@ pub fn run(dry_run: bool) {
         println!("  \x1b[32m✓ System already optimized\x1b[0m\n");
     }
 
-    super::footer::wait_for_key();
+    
 }

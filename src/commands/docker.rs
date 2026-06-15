@@ -23,5 +23,5 @@ pub fn run(dry_run: bool) {
         }
     }
 
-    super::footer::wait_for_key();
+    
 }

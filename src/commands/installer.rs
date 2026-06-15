@@ -10,7 +10,7 @@ pub fn run(dry_run: bool) {
 
     if installers.is_empty() {
         println!("  ✨ No installer files found.\n");
-        super::footer::wait_for_key();
+        
         return;
     }
 
@@ -31,5 +31,5 @@ pub fn run(dry_run: bool) {
         println!("  🎉 Freed: {}\n", ByteSize::b(total).to_string().bold().green());
     }
 
-    super::footer::wait_for_key();
+    
 }

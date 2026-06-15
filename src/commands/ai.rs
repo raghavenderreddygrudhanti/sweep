@@ -12,7 +12,7 @@ pub fn run(dry_run: bool) {
 
     if caches.is_empty() {
         println!("  ✨ No AI/ML caches found.\n");
-        super::footer::wait_for_key();
+        
         return;
     }
 
@@ -42,5 +42,5 @@ pub fn run(dry_run: bool) {
         println!("  🎉 Freed: {}\n", ByteSize::b(total).to_string().bold().green());
     }
 
-    super::footer::wait_for_key();
+    
 }

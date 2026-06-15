@@ -65,7 +65,14 @@ pub fn run() {
                     let _ = execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show);
                     let _ = terminal::disable_raw_mode();
                     run_selected(selected);
-                    return;
+                    // After command finishes, re-enter menu
+                    let _ = terminal::enable_raw_mode();
+                    let _ = execute!(stdout, terminal::EnterAlternateScreen, cursor::Hide);
+                    // Drain leftover keys
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    while event::poll(std::time::Duration::from_millis(50)).unwrap_or(false) {
+                        let _ = event::read();
+                    }
                 }
                 KeyCode::Char('1') => { selected = 0; }
                 KeyCode::Char('2') => { selected = 1; }
@@ -89,8 +96,8 @@ fn run_selected(idx: usize) {
         0 => super::clean::run(true),
         1 => super::uninstall::run(true),
         2 => super::optimize::run(true),
-        3 => super::scan::run("~"),
-        4 => super::status::run(),
+        3 => super::scan::run("~"),  // Has its own alternate screen
+        4 => super::status::run(),   // Has its own alternate screen
         _ => {}
     }
 }
