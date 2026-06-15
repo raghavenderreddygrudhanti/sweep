@@ -106,24 +106,34 @@ pub fn run(dry_run: bool) {
                 }
                 KeyCode::Enter | KeyCode::Char('d') | KeyCode::Char('D') => {
                     if marked_count > 0 {
-                        let _ = execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show);
-                        let _ = terminal::disable_raw_mode();
+                        // Confirm before deleting
+                        
+                        let _ = stdout.write_all(format!(
+                            "\r\n  \x1b[1;31m⚠ Delete {} app(s)? (y/n):\x1b[0m ", marked_count
+                        ).as_bytes());
+                        let _ = stdout.flush();
 
-                        if dry_run {
-                            println!("\n  💾 Would uninstall {} apps ({})",
-                                marked_count, ByteSize::b(marked_size));
-                            println!("  Run `sweep uninstall` without --dry-run to remove.\n");
-                        } else {
+                        let confirm = loop {
+                            if let Ok(Event::Key(k)) = event::read() {
+                                match k.code {
+                                    KeyCode::Char('y') | KeyCode::Char('Y') => break true,
+                                    _ => break false,
+                                }
+                            }
+                        };
+
+                        if confirm {
+                            let _ = execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show);
+                            let _ = terminal::disable_raw_mode();
+
                             println!("\n  Uninstalling {} apps...", marked_count);
                             for (i, app) in apps_list.iter().enumerate() {
                                 if marked[i] {
-                                    // Move app to Trash
                                     let _ = std::process::Command::new("osascript")
                                         .args(["-e", &format!(
                                             "tell application \"Finder\" to delete POSIX file \"{}\"",
                                             app.path.display()
                                         )]).output();
-                                    // Remove remnants
                                     let remnants = apps::find_app_remnants(app);
                                     for r in &remnants {
                                         let _ = std::process::Command::new("osascript")
@@ -136,8 +146,48 @@ pub fn run(dry_run: bool) {
                                 }
                             }
                             println!("\n  🎉 Done! Apps moved to Trash.\n");
+                            return;
                         }
-                        return;
+                        // If cancelled, just continue
+                    } else if selected < apps_list.len() {
+                        // No selection — delete currently highlighted app (with confirm)
+                        let app = &apps_list[selected];
+                        
+                        let _ = stdout.write_all(format!(
+                            "\r\n  \x1b[1;31m⚠ Delete {}? (y/n):\x1b[0m ", app.name
+                        ).as_bytes());
+                        let _ = stdout.flush();
+
+                        let confirm = loop {
+                            if let Ok(Event::Key(k)) = event::read() {
+                                match k.code {
+                                    KeyCode::Char('y') | KeyCode::Char('Y') => break true,
+                                    _ => break false,
+                                }
+                            }
+                        };
+
+                        if confirm {
+                            let _ = execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show);
+                            let _ = terminal::disable_raw_mode();
+
+                            println!("\n  Uninstalling {}...", app.name);
+                            let _ = std::process::Command::new("osascript")
+                                .args(["-e", &format!(
+                                    "tell application \"Finder\" to delete POSIX file \"{}\"",
+                                    app.path.display()
+                                )]).output();
+                            let remnants = apps::find_app_remnants(app);
+                            for r in &remnants {
+                                let _ = std::process::Command::new("osascript")
+                                    .args(["-e", &format!(
+                                        "tell application \"Finder\" to delete POSIX file \"{}\"",
+                                        r.display()
+                                    )]).output();
+                            }
+                            println!("  ✓ {} (+{} remnants) moved to Trash\n", app.name, remnants.len());
+                            return;
+                        }
                     }
                 }
                 KeyCode::Char('q') | KeyCode::Esc => break,
