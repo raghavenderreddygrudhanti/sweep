@@ -18,6 +18,12 @@ pub fn find_installed_apps() -> Vec<InstalledApp> {
     let apps_dir = PathBuf::from("/Applications");
     let mut apps = vec![];
 
+    // Use batch du for all apps at once (single subprocess)
+    let sizes = crate::scanner::scan_children(&apps_dir);
+    let size_map: std::collections::HashMap<String, u64> = sizes.into_iter()
+        .map(|r| (r.path.clone(), r.size))
+        .collect();
+
     if let Ok(entries) = fs::read_dir(&apps_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
@@ -29,7 +35,7 @@ pub fn find_installed_apps() -> Vec<InstalledApp> {
                     .to_string();
 
                 let bundle_id = get_bundle_id(&path);
-                let size = crate::scanner::scan_size(&path).0;
+                let size = size_map.get(&path.display().to_string()).copied().unwrap_or(0);
 
                 apps.push(InstalledApp {
                     name,
