@@ -148,9 +148,9 @@ pub fn run(path: &str) {
                     "█".repeat(bar_len),
                     "░".repeat(15usize.saturating_sub(bar_len)));
 
-                let ptr = if *orig_idx == selected { " \x1b[32m▶\x1b[0m" } else { "  " };
+                let ptr = if display_idx == selected { " \x1b[32m▶\x1b[0m" } else { "  " };
                 let cleanable = if cat.cleanable { "\x1b[33m··\x1b[0m" } else { "  " };
-                let name = if *orig_idx == selected {
+                let name = if display_idx == selected {
                     format!("\x1b[1;36m{}\x1b[0m", cat.name)
                 } else {
                     cat.name.to_string()
@@ -218,7 +218,11 @@ pub fn run(path: &str) {
         // Input with timeout (so we can update scanning results)
         if event::poll(std::time::Duration::from_millis(300)).unwrap_or(false) {
             if let Ok(Event::Key(key)) = event::read() {
-                let item_count = if mode == "overview" { categories.len() } else { folder_results.len().min(15) };
+                let item_count = if mode == "overview" {
+                    categories.iter().filter(|c| c.size > 0).count()
+                } else {
+                    folder_results.len().min(15)
+                };
 
                 // Handle delete confirmation first
                 if confirm_delete {
@@ -266,14 +270,23 @@ pub fn run(path: &str) {
                         multi_selected.clear();
                     }
                     KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
-                        if mode == "overview" && selected < categories.len() {
-                            current_path = categories[selected].path.clone();
-                            folder_results = scanner::scan_children(&current_path);
-                            folder_results.sort_by(|a, b| b.size.cmp(&a.size));
-                            mode = "folder";
-                            selected = 0;
-                            multi_selected.clear();
-                            status_msg.clear();
+                        if mode == "overview" {
+                            // Get the displayed ready list to find the right path
+                            let ready: Vec<(usize, &Category)> = categories.iter().enumerate()
+                                .filter(|(_, c)| c.size > 0)
+                                .collect();
+                            let mut sorted_ready = ready;
+                            sorted_ready.sort_by(|a, b| b.1.size.cmp(&a.1.size));
+
+                            if selected < sorted_ready.len() {
+                                current_path = sorted_ready[selected].1.path.clone();
+                                folder_results = scanner::scan_children(&current_path);
+                                folder_results.sort_by(|a, b| b.size.cmp(&a.size));
+                                mode = "folder";
+                                selected = 0;
+                                multi_selected.clear();
+                                status_msg.clear();
+                            }
                         } else if mode == "folder" && selected < folder_results.len() && folder_results[selected].is_dir {
                             current_path = PathBuf::from(&folder_results[selected].path);
                             folder_results = scanner::scan_children(&current_path);
