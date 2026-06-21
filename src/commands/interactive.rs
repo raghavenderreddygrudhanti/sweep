@@ -27,6 +27,9 @@ pub fn run() {
     // Get disk info once for the header
     let disk_info = get_disk_summary();
 
+    // Clear screen on first draw
+    let _ = execute!(stdout, cursor::MoveTo(0, 0), terminal::Clear(terminal::ClearType::All));
+
     loop {
         let _ = execute!(stdout, cursor::MoveTo(0, 0));
 
