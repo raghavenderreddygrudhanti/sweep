@@ -268,12 +268,13 @@ fn delete_target(target: &CleanTarget, _mode: DeleteMode) -> u64 {
     }
 
     // Show progress for this target
-    print!("  \x1b[33m\u{2022}\x1b[0m {}...\r", target.name);
+    print!("  \x1b[33m\u{2022}\x1b[0m Deleting {}...\r", target.name);
     let _ = std::io::Write::flush(&mut std::io::stdout());
 
     // Direct-delete contents. Skip anything that fails (no password prompts).
     let mut freed: u64 = 0;
     let mut failed: u32 = 0;
+    let mut count: u32 = 0;
 
     if let Ok(entries) = std::fs::read_dir(path) {
         for entry in entries.flatten() {
@@ -284,6 +285,15 @@ fn delete_target(target: &CleanTarget, _mode: DeleteMode) -> u64 {
                 p.metadata().map(|m| m.len()).unwrap_or(0)
             };
 
+            // Show live progress for large items
+            if size > 10 * 1024 * 1024 {
+                let name = p.file_name().unwrap_or_default().to_string_lossy();
+                let short_name = if name.len() > 25 { format!("{}...", &name[..22]) } else { name.to_string() };
+                print!("\r\x1b[K  \x1b[33m\u{2022}\x1b[0m Deleting {} ({})...",
+                    short_name, ByteSize::b(size));
+                let _ = std::io::Write::flush(&mut std::io::stdout());
+            }
+
             let success = if p.is_dir() {
                 std::fs::remove_dir_all(&p).is_ok()
             } else {
@@ -292,6 +302,7 @@ fn delete_target(target: &CleanTarget, _mode: DeleteMode) -> u64 {
 
             if success {
                 freed += size;
+                count += 1;
             } else {
                 failed += 1;
             }

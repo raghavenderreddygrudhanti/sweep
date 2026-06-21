@@ -63,8 +63,12 @@ pub fn run() {
     let items: Arc<Mutex<Vec<TimelineItem>>> = Arc::new(Mutex::new(
         paths.iter().map(|(p, prev)| {
             let short = p.replace(&home_str, "~");
-            // Truncate to 30 chars
-            let short = if short.len() > 30 { format!("{}...", &short[..27]) } else { short };
+            // Truncate safely (char boundary, pad with spaces)
+            let short = if short.chars().count() > 28 {
+                format!("{:.28}...", short)
+            } else {
+                format!("{:<31}", short)
+            };
             TimelineItem {
                 short,
                 path: p.clone(),
@@ -162,14 +166,14 @@ pub fn run() {
                 if abs_delta > 50 * 1024 * 1024 {
                     let size_str = ByteSize::b(abs_delta).to_string();
                     if item.delta > 0 {
-                        out.push_str(&format!("  \x1b[32m\u{2611}\x1b[0m \x1b[31m\u{25b2} +{:<8}\x1b[0m {}\r\n",
+                        out.push_str(&format!("  \x1b[32m\u{2611}\x1b[0m \x1b[31m\u{25b2} +{:<9}\x1b[0m {}\r\n",
                             size_str, item.short));
                     } else {
-                        out.push_str(&format!("  \x1b[32m\u{2611}\x1b[0m \x1b[32m\u{25bc} -{:<8}\x1b[0m {}\r\n",
+                        out.push_str(&format!("  \x1b[32m\u{2611}\x1b[0m \x1b[32m\u{25bc} -{:<9}\x1b[0m {}\r\n",
                             size_str, item.short));
                     }
                 } else {
-                    out.push_str(&format!("  \x1b[32m\u{2611}\x1b[0m \x1b[90m\u{2500} no change\x1b[0m  {}\r\n",
+                    out.push_str(&format!("  \x1b[32m\u{2611}\x1b[0m \x1b[90m\u{2500} no change  {}\x1b[0m\r\n",
                         item.short));
                 }
             } else {
