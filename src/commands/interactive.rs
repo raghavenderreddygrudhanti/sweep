@@ -159,7 +159,7 @@ fn get_disk_summary() -> String {
 
             // Quick reclaimable estimate from known junk paths
             let reclaimable = quick_reclaimable_estimate();
-            if reclaimable > 500 * 1024 * 1024 {
+            if reclaimable > 10 * 1024 * 1024 {
                 s.push_str(&format!("  \x1b[90m\u{2248}\x1b[0m \x1b[33m~{}\x1b[0m \x1b[90mreclaimable\x1b[0m\r\n",
                     ByteSize::b(reclaimable)));
             }
