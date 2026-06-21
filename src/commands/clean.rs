@@ -206,7 +206,17 @@ pub fn run(dry_run: bool, mode: DeleteMode) {
     }
 
     println!("  \x1b[1;32m\u{1f389} Done! Reclaimed: {}\x1b[0m", ByteSize::b(actually_freed));
+    println!();
 
+    // Pause so user can see results (especially when launched from interactive menu)
+    println!("  \x1b[90mPress any key to continue...\x1b[0m");
+    let _ = terminal::enable_raw_mode();
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    while event::poll(std::time::Duration::from_millis(100)).unwrap_or(false) {
+        let _ = event::read();
+    }
+    let _ = event::read();
+    let _ = terminal::disable_raw_mode();
 }
 
 /// Scan a path, display its size, and add to targets if non-empty.
