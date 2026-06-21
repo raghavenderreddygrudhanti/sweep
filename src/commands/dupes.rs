@@ -109,9 +109,10 @@ pub fn run(path: &str, min_size: u64) {
     let checked = AtomicU64::new(0);
 
     // Flatten all candidates into one list for maximum parallel throughput
-    let all_files: Vec<(u64, PathBuf)> = candidates.iter()
-        .flat_map(|(size, paths)| paths.iter().map(move |p| (*size, p.clone())))
+    let all_files: Vec<(u64, PathBuf)> = candidates.into_iter()
+        .flat_map(|(size, paths)| paths.into_iter().map(move |p| (size, p)))
         .collect();
+    // candidates consumed — memory freed
 
     // Hash all in parallel across all cores
     let hashed: Vec<(u64, u64, PathBuf)> = all_files.par_iter()
@@ -138,11 +139,13 @@ pub fn run(path: &str, min_size: u64) {
     for (size, hash, path) in hashed {
         groups.entry((size, hash)).or_default().push(path);
     }
+    // all_files and hashed are consumed/moved — memory freed
 
     let mut dupe_groups: Vec<DupeGroup> = groups.into_iter()
         .filter(|(_, paths)| paths.len() >= 2)
         .map(|((size, _), paths)| DupeGroup { size, paths })
         .collect();
+    // groups consumed — memory freed
 
     if dupe_groups.is_empty() {
         println!("  \x1b[32m\u{2713}\x1b[0m No duplicates found!\n");
