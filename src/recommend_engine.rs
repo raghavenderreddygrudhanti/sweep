@@ -1,5 +1,6 @@
 //! Recommend v2 — ranked decision engine.
 //! Scores each item based on: size + age + regenerability + safety signals.
+//! Whitelist is a hard pre-filter — protected paths can NEVER be scored.
 
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -57,7 +58,21 @@ const REGENERABLE: &[&str] = &[
 ];
 
 /// Score an item and produce a recommendation.
+/// Whitelist is a hard pre-filter — if protected, always returns Keep.
 pub fn score_item(path: &Path, label: &str, size: u64) -> ScoredItem {
+    // HARD PRE-FILTER: whitelist check (cannot be overridden by score)
+    if crate::whitelist::is_protected(path) {
+        return ScoredItem {
+            path: path.to_path_buf(),
+            label: label.to_string(),
+            size, score: -200,
+            action: Action::Keep,
+            class: ItemClass::Sensitive,
+            reasons: vec!["Protected by whitelist".into()],
+            age_days: 0,
+        };
+    }
+
     let home = crate::error::home_or_exit();
     let home_str = home.display().to_string();
     let rel_path = path.display().to_string().replace(&home_str, "");
@@ -134,10 +149,10 @@ pub fn score_item(path: &Path, label: &str, size: u64) -> ScoredItem {
         }
     }
 
-    // 7. Git-ignored check
+    // 7. Git-ignored pattern check
     if is_in_gitignore(path) {
         score += 15;
-        reasons.push("Listed in .gitignore (regenerable)".into());
+        reasons.push("Known build artifact pattern (regenerable)".into());
     }
 
     // Determine action
@@ -228,10 +243,11 @@ fn installer_app_exists(path: &Path) -> bool {
     false
 }
 
-/// Check if path is inside a .gitignore.
+/// Check if path is a commonly-gitignored build artifact (by name pattern).
+/// NOTE: Does NOT read actual .gitignore files. Awards bonus only for
+/// well-known regenerable directory names.
 fn is_in_gitignore(path: &Path) -> bool {
     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    // Common gitignored dirs
     matches!(name, "node_modules" | "target" | ".venv" | "__pycache__"
         | "dist" | "build" | ".next" | ".nuxt" | "vendor")
 }
