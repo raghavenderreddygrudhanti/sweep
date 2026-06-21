@@ -301,21 +301,15 @@ pub fn run(path: &str) {
                         super::ui::NavAction::Char('y') | super::ui::NavAction::Char('Y') => {
                             if mode == "folder" && selected < folder_results.len() {
                                 let target = &folder_results[selected].path.clone();
-                                status_msg = format!("{}", super::ui::action_name("delete"));
-                                let _ = execute!(stdout, cursor::MoveTo(0, 0));
                                 let deleted = try_delete(target);
                                 if deleted {
-                                    status_msg = format!("✓ Vanished: {}", PathBuf::from(target).file_name().unwrap_or_default().to_string_lossy());
-                                } else if target.contains("Containers/com.docker") {
-                                    status_msg = "✗ Protected by macOS. Use: docker system prune".to_string();
-                                } else if target.contains("/Library/") {
-                                    status_msg = "✗ System protected. Try: sudo rm -rf <path>".to_string();
+                                    status_msg = format!("\x1b[32m\u{2713}\x1b[0m Deleted: {}", PathBuf::from(target).file_name().unwrap_or_default().to_string_lossy());
+                                    folder_results = scanner::scan_children(&current_path);
+                                    folder_results.sort_by(|a, b| b.size.cmp(&a.size));
+                                    if selected >= folder_results.len() && selected > 0 { selected -= 1; }
                                 } else {
-                                    status_msg = "✗ Permission denied".to_string();
+                                    status_msg = format!("\x1b[33m\u{26a0}\x1b[0m Cannot delete (protected by macOS). Skipped.");
                                 }
-                                folder_results = scanner::scan_children(&current_path);
-                                folder_results.sort_by(|a, b| b.size.cmp(&a.size));
-                                if selected >= folder_results.len() && selected > 0 { selected -= 1; }
                             }
                             confirm_delete = false;
                         }
