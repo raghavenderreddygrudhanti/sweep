@@ -27,6 +27,7 @@ fn pick_folders() -> Vec<PathBuf> {
         ("Downloads", home.join("Downloads")),
         ("Desktop",   home.join("Desktop")),
         ("Pictures",  home.join("Pictures")),
+        ("Photos Library", home.join("Pictures/Photos Library.photoslibrary/originals")),
         ("Movies",    home.join("Movies")),
         ("Music",     home.join("Music")),
         ("All above", home.clone()),
@@ -74,8 +75,8 @@ fn pick_folders() -> Vec<PathBuf> {
                         } else {
                             selected[idx] = !selected[idx];
                         }
-                        // Redraw from top of options
-                        print!("\x1b[{}A\r", options.len() + 3);
+                        // Redraw from top of options (7 items + 1 blank + 1 instructions + 1 choice = +3)
+                        print!("\x1b[{}A\r", options.len() + 2);
                         for (i, (label, _)) in options.iter().enumerate() {
                             let mark = if selected[i] { "\x1b[32m\u{25cf}\x1b[0m" } else { "\x1b[90m\u{25cb}\x1b[0m" };
                             print!("\x1b[2K    {} {}. {}\r\n", mark, i + 1, label);
