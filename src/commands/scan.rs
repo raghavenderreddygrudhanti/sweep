@@ -287,7 +287,7 @@ pub fn run(path: &str) {
 
         // Input — block until key press or 50ms timeout for scan updates
         let scanning = categories.iter().any(|c| c.size < 0);
-        let timeout = if scanning { std::time::Duration::from_millis(50) } else { std::time::Duration::from_millis(1000) };
+        let timeout = if scanning { std::time::Duration::from_millis(50) } else { std::time::Duration::from_millis(2000) };
         
         if event::poll(timeout).unwrap_or(false) {
             if let Ok(Event::Key(key)) = event::read() {
@@ -393,23 +393,31 @@ pub fn run(path: &str) {
                     }
                     super::ui::NavAction::Back => {
                         if mode == "folder" {
-                            if let Some(parent) = current_path.parent() {
-                                let parent_buf = parent.to_path_buf();
-                                current_path = parent_buf;
-                                folder_results = scanner::scan_children(&current_path);
-                                folder_results.sort_by(|a, b| b.size.cmp(&a.size));
-                                selected = 0;
-                                multi_selected.clear();
-                            }
                             let is_root = categories.iter().filter(|c| c.size > 0).any(|c| c.path == current_path)
                                 || current_path == crate::error::home_or_exit()
                                 || current_path == PathBuf::from("/");
                             if is_root {
+                                // Already at top level — go back to overview instantly
                                 mode = "overview";
                                 selected = 0;
+                            } else if let Some(parent) = current_path.parent() {
+                                // Check if parent is a root category
+                                let parent_buf = parent.to_path_buf();
+                                let parent_is_root = categories.iter().filter(|c| c.size > 0).any(|c| c.path == parent_buf)
+                                    || parent_buf == crate::error::home_or_exit()
+                                    || parent_buf == PathBuf::from("/");
+                                if parent_is_root {
+                                    mode = "overview";
+                                    selected = 0;
+                                } else {
+                                    current_path = parent_buf;
+                                    folder_results = scanner::scan_children(&current_path);
+                                    folder_results.sort_by(|a, b| b.size.cmp(&a.size));
+                                    selected = 0;
+                                }
                             }
+                            multi_selected.clear();
                         } else {
-                            // In overview — Esc goes back to main menu
                             break;
                         }
                         status_msg.clear();
