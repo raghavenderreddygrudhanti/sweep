@@ -88,7 +88,14 @@ pub fn run() {
     // Human-readable output
     if changes.is_empty() {
         println!("  No significant changes detected (threshold: 50 MB).\n");
-
+        println!("  \x1b[90mPress q to exit\x1b[0m");
+        let _ = crossterm::terminal::enable_raw_mode();
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        while crossterm::event::poll(std::time::Duration::from_millis(100)).unwrap_or(false) {
+            let _ = crossterm::event::read();
+        }
+        let _ = crossterm::event::read();
+        let _ = crossterm::terminal::disable_raw_mode();
         return;
     }
 
@@ -125,5 +132,13 @@ pub fn run() {
         .collect();
     cache::save_all(&new_cache);
 
-
+    // Wait for user to read results before returning
+    println!("  \x1b[90mPress q to exit\x1b[0m");
+    let _ = crossterm::terminal::enable_raw_mode();
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    while crossterm::event::poll(std::time::Duration::from_millis(100)).unwrap_or(false) {
+        let _ = crossterm::event::read();
+    }
+    let _ = crossterm::event::read();
+    let _ = crossterm::terminal::disable_raw_mode();
 }

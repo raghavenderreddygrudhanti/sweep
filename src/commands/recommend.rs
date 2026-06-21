@@ -90,7 +90,9 @@ pub fn run() {
 
     // Read choice
     let _ = crossterm::terminal::enable_raw_mode();
-    while crossterm::event::poll(std::time::Duration::from_millis(50)).unwrap_or(false) {
+    // Drain all buffered events (from scrolling, mouse, etc.)
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    while crossterm::event::poll(std::time::Duration::from_millis(100)).unwrap_or(false) {
         let _ = crossterm::event::read();
     }
     let choice = loop {
@@ -98,7 +100,8 @@ pub fn run() {
             match key.code {
                 crossterm::event::KeyCode::Char(c) => break c,
                 crossterm::event::KeyCode::Esc => break 'q',
-                _ => break 'q',
+                crossterm::event::KeyCode::Enter => continue, // ignore stray Enter
+                _ => continue, // ignore unknown keys, wait for valid input
             }
         }
     };
