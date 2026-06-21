@@ -1,18 +1,13 @@
-//! Smart recommendations — scans common junk locations and suggests cleanup actions.
-//! Shows results progressively as each location is scanned.
+//! Recommend v2 — ranked decision engine.
+//! Scores each item and groups into SAFE CLEAN / REVIEW / KEEP.
 
-use crate::output::{self, RecommendOutput, Recommendation};
-use crate::scanner;
-use colored::Colorize;
+use std::io::{self, Write};
 use std::path::PathBuf;
-
-struct RecommendSource {
-    path: PathBuf,
-    description: &'static str,
-    command: &'static str,
-    priority: u8,
-    min_size_mb: u64,
-}
+use bytesize::ByteSize;
+use colored::*;
+use crate::scanner;
+use crate::recommend_engine::{self, ScoredItem, Action};
+use crate::output;
 
 pub fn run() {
     if output::is_json() {
@@ -20,275 +15,225 @@ pub fn run() {
         return;
     }
 
-    // Clear screen for a fresh view
     print!("\x1b[2J\x1b[H");
-    let _ = std::io::Write::flush(&mut std::io::stdout());
-
-    super::ui::print_header("\x1b[1;32m\u{1f4a1} Sweep Recommendations\x1b[0m");
+    let _ = io::stdout().flush();
+    super::ui::print_header("\x1b[1;32mSmart Recommendations\x1b[0m");
 
     let home = crate::error::home_or_exit();
+    let home_str = home.display().to_string();
+
+    // Scan known locations and score each
     let sources = build_sources(&home);
+    let mut items: Vec<ScoredItem> = Vec::new();
 
-    let mut recommendations: Vec<Recommendation> = Vec::new();
-    let mut total_reclaimable: u64 = 0;
-    let mut check_count: usize = 0;
+    for (path, label) in &sources {
+        if !path.exists() { continue; }
 
-    // Progressive scan — show each item with tick as it completes
-    for source in &sources {
-        if !source.path.exists() {
+        print!("  \x1b[33m{}\x1b[0m {}...\r",
+            super::ui::spinner(items.len()), label);
+        let _ = io::stdout().flush();
+
+        let size = scanner::scan_size_native(path);
+        if size < 50 * 1024 * 1024 { // Skip < 50MB
+            print!("\r\x1b[K");
             continue;
         }
 
-        check_count += 1;
-        print!("  \x1b[33m{}\x1b[0m Checking {}...\r",
-            super::ui::spinner(check_count), source.description);
-        let _ = std::io::Write::flush(&mut std::io::stdout());
+        let scored = recommend_engine::score_item(path, label, size);
+        print!("\r\x1b[K");
 
-        // For Downloads, only count installer files (.dmg, .pkg, .zip)
-        let size = if source.command == "sweep installer" {
-            scan_installer_size(&source.path)
-        } else {
-            scanner::scan_size_native(&source.path)
-        };
-        let size_mb = size / (1024 * 1024);
+        // Show immediately if actionable
+        if scored.action != Action::Keep {
+            let short = path.display().to_string().replace(&home_str, "~");
+            let short = if short.len() > 35 { format!("{}...", &short[..32]) } else { short };
+            println!("  {} {:>9}  {} \x1b[90m(score: {})\x1b[0m",
+                scored.action.icon(),
+                ByteSize::b(scored.size).to_string().bold(),
+                short,
+                scored.score);
+            // Show top reasons
+            for reason in scored.reasons.iter().take(2) {
+                println!("    \x1b[90m\u{2713} {}\x1b[0m", reason);
+            }
+        }
 
-        if size_mb >= source.min_size_mb {
-            total_reclaimable += size;
-            let icon = match source.priority {
-                1 => "\x1b[31m\u{25cf}\x1b[0m",   // red dot
-                2 => "\x1b[33m\u{25cf}\x1b[0m",   // yellow dot
-                _ => "\x1b[32m\u{25cf}\x1b[0m",   // green dot
-            };
-            print!("\r\x1b[K");
-            println!("  \x1b[32m\u{2713}\x1b[0m {} {:>9}  {}",
-                icon,
-                bytesize::ByteSize::b(size).to_string().bold(),
-                source.description);
-            println!("    \x1b[90m\u{2192} {}\x1b[0m", source.command);
+        items.push(scored);
+    }
 
-            recommendations.push(Recommendation {
-                priority: source.priority,
-                category: String::new(),
-                description: source.description.to_string(),
-                size,
-                command: source.command.to_string(),
-            });
-        } else {
-            print!("\r\x1b[K");
+    // Separate by action
+    let safe_items: Vec<&ScoredItem> = items.iter()
+        .filter(|i| i.action == Action::SafeClean)
+        .collect();
+    let review_items: Vec<&ScoredItem> = items.iter()
+        .filter(|i| i.action == Action::Review)
+        .collect();
+
+    let safe_total: u64 = safe_items.iter().map(|i| i.size).sum();
+    let review_total: u64 = review_items.iter().map(|i| i.size).sum();
+
+    // Summary
+    println!("\n  \x1b[90m\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\x1b[0m\n");
+
+    if safe_items.is_empty() && review_items.is_empty() {
+        println!("  \x1b[32m\u{2713}\x1b[0m System is clean — nothing to recommend.\n");
+        wait_for_key();
+        return;
+    }
+
+    if !safe_items.is_empty() {
+        println!("  \x1b[1;32mSAFE CLEAN:\x1b[0m  {} ({} items)",
+            ByteSize::b(safe_total).to_string().green().bold(),
+            safe_items.len());
+        println!("  \x1b[90mAll regenerable, high confidence, no risk.\x1b[0m");
+    }
+    if !review_items.is_empty() {
+        println!("  \x1b[1;33mREVIEW:\x1b[0m      {} ({} items)",
+            ByteSize::b(review_total).to_string().yellow().bold(),
+            review_items.len());
+        println!("  \x1b[90mMight be safe, check before deleting.\x1b[0m");
+    }
+    println!();
+
+    // Impact prediction
+    let total = safe_total + review_total;
+    if total > 0 {
+        let disks = sysinfo::Disks::new_with_refreshed_list();
+        if let Some(disk) = disks.list().iter().find(|d| d.mount_point().to_string_lossy() == "/") {
+            let free = disk.available_space();
+            let after = free + safe_total;
+            println!("  \x1b[1mImpact:\x1b[0m");
+            println!("    Free now:    {}", ByteSize::b(free));
+            println!("    After clean: \x1b[32m{}\x1b[0m (+{})",
+                ByteSize::b(after), ByteSize::b(safe_total));
+            println!("    Risk:        \x1b[32mNone\x1b[0m (all regenerable caches)");
+            println!();
         }
     }
 
-    print!("\r\x1b[K");
+    // Actions
+    if !safe_items.is_empty() {
+        println!("  \x1b[1mActions:\x1b[0m  \x1b[32ma\x1b[0m clean all safe  \x1b[90mq\x1b[0m quit");
+        println!();
+        print!("  \x1b[1;33mChoice:\x1b[0m ");
+        let _ = io::stdout().flush();
 
-    if recommendations.is_empty() {
-        println!("  \x1b[32m\u{2713}\x1b[0m System looks clean! No major reclaimable space found.\n");
-        println!("  \x1b[90mPress any key to continue...\x1b[0m");
         let _ = crossterm::terminal::enable_raw_mode();
         std::thread::sleep(std::time::Duration::from_millis(400));
         while crossterm::event::poll(std::time::Duration::from_millis(150)).unwrap_or(false) {
             let _ = crossterm::event::read();
         }
-        let _ = crossterm::event::read();
+        let choice = loop {
+            if let Ok(crossterm::event::Event::Key(key)) = crossterm::event::read() {
+                match key.code {
+                    crossterm::event::KeyCode::Char('a') | crossterm::event::KeyCode::Char('A') => break 'a',
+                    crossterm::event::KeyCode::Char('q') | crossterm::event::KeyCode::Char('Q')
+                    | crossterm::event::KeyCode::Esc => break 'q',
+                    _ => continue,
+                }
+            }
+        };
         let _ = crossterm::terminal::disable_raw_mode();
-        return;
+        println!();
+
+        if choice == 'a' {
+            println!("\n  \x1b[33mCleaning safe items...\x1b[0m");
+            let mut freed: u64 = 0;
+            for item in &safe_items {
+                if let Ok(entries) = std::fs::read_dir(&item.path) {
+                    for entry in entries.flatten() {
+                        let p = entry.path();
+                        let ok = if p.is_dir() { std::fs::remove_dir_all(&p).is_ok() }
+                            else { std::fs::remove_file(&p).is_ok() };
+                        if ok {
+                            freed += p.metadata().map(|m| m.len()).unwrap_or(0);
+                        }
+                    }
+                }
+                println!("  \x1b[32m\u{2713}\x1b[0m {}", item.label);
+            }
+            println!("\n  \x1b[1;32m\u{2713} Freed: {}\x1b[0m\n", ByteSize::b(freed));
+            crate::history::log_delete("recommend", freed, "smart-clean");
+        }
+    } else {
+        wait_for_key();
+    }
+}
+
+fn run_json() {
+    let home = crate::error::home_or_exit();
+    let sources = build_sources(&home);
+    let mut results = Vec::new();
+
+    for (path, label) in &sources {
+        if !path.exists() { continue; }
+        let size = scanner::scan_size_native(path);
+        if size < 50 * 1024 * 1024 { continue; }
+
+        let scored = recommend_engine::score_item(path, label, size);
+        if scored.action != Action::Keep {
+            results.push(serde_json::json!({
+                "path": path.display().to_string(),
+                "label": label,
+                "size": size,
+                "score": scored.score,
+                "action": scored.action.label(),
+                "class": scored.class.label(),
+                "reasons": scored.reasons,
+            }));
+        }
     }
 
-    // Summary
-    println!();
-    println!("  Total reclaimable: {}", bytesize::ByteSize::b(total_reclaimable).to_string().bold().green());
-    println!();
-    println!("  \x1b[90m\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\x1b[0m");
-    println!("  \x1b[1mActions:\x1b[0m  \x1b[32ma\x1b[0m clean all  \x1b[32m1-{}\x1b[0m clean item  \x1b[90mq\x1b[0m quit",
-        recommendations.len().min(9));
-    println!();
-    print!("  \x1b[1;33mChoice:\x1b[0m ");
-    let _ = std::io::Write::flush(&mut std::io::stdout());
+    let output = serde_json::json!({
+        "recommendations": results,
+        "total_safe": results.iter()
+            .filter(|r| r["action"] == "SAFE CLEAN")
+            .filter_map(|r| r["size"].as_u64())
+            .sum::<u64>(),
+    });
+    println!("{}", serde_json::to_string_pretty(&output).unwrap_or_default());
+}
 
-    // Read choice
+fn build_sources(home: &PathBuf) -> Vec<(PathBuf, &'static str)> {
+    vec![
+        (home.join(".cache/huggingface/hub"), "HuggingFace models"),
+        (home.join(".ollama/models"), "Ollama models"),
+        (home.join(".cache/torch"), "PyTorch cache"),
+        (home.join(".cache/pip"), "pip cache"),
+        (home.join(".cache/uv"), "uv cache"),
+        (home.join("Library/Caches"), "Application caches"),
+        (home.join("Library/Logs"), "System logs"),
+        (home.join(".gradle/caches"), "Gradle cache"),
+        (home.join(".gradle/wrapper/dists"), "Gradle wrappers"),
+        (home.join(".m2/repository"), "Maven repository"),
+        (home.join(".npm/_cacache"), "npm cache"),
+        (home.join(".cargo/registry/cache"), "Cargo registry"),
+        (home.join(".rustup/downloads"), "Rustup downloads"),
+        (home.join("Library/Caches/CocoaPods"), "CocoaPods cache"),
+        (home.join("Library/Caches/Homebrew"), "Homebrew cache"),
+        (home.join("Library/Caches/go-build"), "Go build cache"),
+        (home.join("Library/Developer/Xcode/DerivedData"), "Xcode DerivedData"),
+        (home.join("Library/Developer/CoreSimulator/Caches"), "Simulator caches"),
+        (home.join(".conda/pkgs"), "Conda packages"),
+        (home.join("miniconda3/pkgs"), "Miniconda packages"),
+        (home.join("Library/Caches/Google/Chrome"), "Chrome cache"),
+        (home.join("Library/Caches/com.apple.Safari"), "Safari cache"),
+        (home.join("Library/Caches/Firefox"), "Firefox cache"),
+        (home.join("Library/Caches/com.microsoft.teams"), "Teams cache"),
+        (home.join("Library/Caches/com.tinyspeck.slackmacgap"), "Slack cache"),
+        (home.join("Library/Caches/com.hnc.Discord"), "Discord cache"),
+        (home.join("Library/Caches/us.zoom.xos"), "Zoom cache"),
+        (home.join(".lmstudio/models"), "LM Studio models"),
+        (home.join(".codex"), "Codex cache"),
+    ]
+}
+
+fn wait_for_key() {
+    println!("  \x1b[90mPress any key to continue...\x1b[0m");
     let _ = crossterm::terminal::enable_raw_mode();
-    // Drain all buffered events (from menu Enter key, scrolling, etc.)
     std::thread::sleep(std::time::Duration::from_millis(400));
     while crossterm::event::poll(std::time::Duration::from_millis(150)).unwrap_or(false) {
         let _ = crossterm::event::read();
     }
-    let choice = loop {
-        if let Ok(crossterm::event::Event::Key(key)) = crossterm::event::read() {
-            match key.code {
-                crossterm::event::KeyCode::Char(c) => break c,
-                crossterm::event::KeyCode::Esc => break 'q',
-                crossterm::event::KeyCode::Enter => continue, // ignore stray Enter
-                _ => continue, // ignore unknown keys, wait for valid input
-            }
-        }
-    };
+    let _ = crossterm::event::read();
     let _ = crossterm::terminal::disable_raw_mode();
-    println!();
-
-    match choice {
-        'q' | 'Q' => {
-            println!("\n  \x1b[90mDone.\x1b[0m\n");
-        }
-        'a' | 'A' => {
-            println!("\n  \x1b[33mCleaning all...\x1b[0m");
-            let mut freed: u64 = 0;
-            for rec in &recommendations {
-                print!("  \x1b[33m\u{2022}\x1b[0m {}...\r", rec.description);
-                let _ = std::io::Write::flush(&mut std::io::stdout());
-                freed += run_clean_command(&rec.command);
-                print!("\r\x1b[K");
-                println!("  \x1b[32m\u{2713}\x1b[0m {}", rec.description);
-            }
-            println!("\n  \x1b[1;32m\u{2713} Freed: {}\x1b[0m\n", bytesize::ByteSize::b(freed).to_string().bold());
-        }
-        c @ '1'..='9' => {
-            let idx = (c as usize) - ('1' as usize);
-            if idx < recommendations.len() {
-                let rec = &recommendations[idx];
-                println!("\n  \x1b[33m\u{2022}\x1b[0m Cleaning: {}", rec.description);
-                let freed = run_clean_command(&rec.command);
-                println!("  \x1b[1;32m\u{2713} Freed: {}\x1b[0m\n", bytesize::ByteSize::b(freed).to_string().bold());
-            } else {
-                println!("\n  \x1b[90mInvalid selection.\x1b[0m\n");
-            }
-        }
-        _ => {
-            println!("\n  \x1b[90mDone.\x1b[0m\n");
-        }
-    }
-}
-
-/// JSON mode — scan everything then output.
-fn run_json() {
-    let home = crate::error::home_or_exit();
-    let sources = build_sources(&home);
-
-    let mut recommendations: Vec<Recommendation> = Vec::new();
-    let mut total_reclaimable: u64 = 0;
-
-    for source in &sources {
-        if !source.path.exists() { continue; }
-        let size = scanner::scan_size_native(&source.path);
-        if size / (1024 * 1024) >= source.min_size_mb {
-            total_reclaimable += size;
-            recommendations.push(Recommendation {
-                priority: source.priority,
-                category: String::new(),
-                description: source.description.to_string(),
-                size,
-                command: source.command.to_string(),
-            });
-        }
-    }
-
-    recommendations.sort_by(|a, b| b.size.cmp(&a.size));
-    output::print_json(&RecommendOutput { recommendations, total_reclaimable });
-}
-
-/// Build sources list.
-fn build_sources(home: &PathBuf) -> Vec<RecommendSource> {
-    vec![
-        RecommendSource { path: home.join(".cache/huggingface/hub"), description: "HuggingFace model cache", command: "sweep ai", priority: 1, min_size_mb: 500 },
-        RecommendSource { path: home.join(".ollama/models"), description: "Ollama downloaded models", command: "sweep ai", priority: 1, min_size_mb: 500 },
-        RecommendSource { path: home.join(".cache/torch"), description: "PyTorch model cache", command: "sweep ai", priority: 2, min_size_mb: 200 },
-        RecommendSource { path: home.join(".cache/pip"), description: "pip package cache", command: "sweep ai", priority: 3, min_size_mb: 100 },
-        RecommendSource { path: home.join("Library/Containers/com.docker.docker/Data"), description: "Docker data", command: "sweep docker", priority: 1, min_size_mb: 1000 },
-        RecommendSource { path: home.join("Library/Caches"), description: "Application caches", command: "sweep clean", priority: 2, min_size_mb: 500 },
-        RecommendSource { path: home.join("Library/Caches/Google/Chrome"), description: "Chrome browser cache", command: "sweep clean", priority: 3, min_size_mb: 200 },
-        RecommendSource { path: home.join("Library/Developer/Xcode/DerivedData"), description: "Xcode DerivedData", command: "sweep dev", priority: 1, min_size_mb: 1000 },
-        RecommendSource { path: home.join("Library/Logs"), description: "System and app logs", command: "sweep clean", priority: 3, min_size_mb: 200 },
-        RecommendSource { path: home.join(".Trash"), description: "Trash", command: "sweep clean", priority: 2, min_size_mb: 500 },
-        RecommendSource { path: home.join("Downloads"), description: "Downloads (.dmg/.pkg)", command: "sweep installer", priority: 2, min_size_mb: 500 },
-        RecommendSource { path: home.join("miniconda3/pkgs"), description: "Conda package cache", command: "sweep ai", priority: 2, min_size_mb: 500 },
-        RecommendSource { path: home.join("anaconda3/pkgs"), description: "Anaconda package cache", command: "sweep ai", priority: 2, min_size_mb: 500 },
-        RecommendSource { path: home.join(".gradle/caches"), description: "Gradle cache", command: "sweep dev", priority: 2, min_size_mb: 500 },
-        RecommendSource { path: home.join(".m2/repository"), description: "Maven cache", command: "sweep dev", priority: 2, min_size_mb: 500 },
-    ]
-}
-
-/// Execute a clean and return bytes freed.
-fn run_clean_command(cmd: &str) -> u64 {
-    let home = crate::error::home_or_exit();
-    let mut freed: u64 = 0;
-
-    let paths: Vec<PathBuf> = match cmd {
-        "sweep ai" => vec![
-            home.join(".cache/huggingface/hub"),
-            home.join(".ollama/models"),
-            home.join(".cache/torch"),
-            home.join(".cache/pip"),
-            home.join("miniconda3/pkgs"),
-            home.join("anaconda3/pkgs"),
-        ],
-        "sweep clean" => vec![
-            home.join("Library/Caches"),
-            home.join("Library/Logs"),
-        ],
-        "sweep docker" => {
-            let _ = std::process::Command::new("docker")
-                .args(["system", "prune", "-f"])
-                .stderr(std::process::Stdio::null())
-                .stdout(std::process::Stdio::null())
-                .status();
-            return 0;
-        }
-        "sweep installer" => vec![home.join("Downloads")],
-        "sweep dev" => vec![
-            home.join("Library/Developer/Xcode/DerivedData"),
-            home.join(".gradle/caches"),
-            home.join(".m2/repository"),
-        ],
-        _ => vec![],
-    };
-
-    for path in &paths {
-        if !path.exists() { continue; }
-
-        if let Ok(entries) = std::fs::read_dir(path) {
-            for entry in entries.flatten() {
-                let p = entry.path();
-
-                // For Downloads, only delete installers
-                if cmd == "sweep installer" {
-                    let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
-                    if ext != "dmg" && ext != "pkg" && ext != "zip" { continue; }
-                }
-
-                let size = if p.is_dir() {
-                    scanner::scan_size_native(&p)
-                } else {
-                    p.metadata().map(|m| m.len()).unwrap_or(0)
-                };
-
-                let ok = if p.is_dir() {
-                    std::fs::remove_dir_all(&p).is_ok()
-                } else {
-                    std::fs::remove_file(&p).is_ok()
-                };
-
-                if ok { freed += size; }
-            }
-        }
-    }
-
-    if freed > 0 {
-        crate::history::log_delete("recommend", freed, "clean");
-    }
-    freed
-}
-
-/// Only count .dmg, .pkg, .zip files in a directory (not everything).
-fn scan_installer_size(path: &std::path::Path) -> u64 {
-    let mut total: u64 = 0;
-    if let Ok(entries) = std::fs::read_dir(path) {
-        for entry in entries.flatten() {
-            let p = entry.path();
-            if p.is_file() {
-                let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
-                if ext == "dmg" || ext == "pkg" || ext == "zip" || ext == "iso" || ext == "app" {
-                    total += p.metadata().map(|m| m.len()).unwrap_or(0);
-                }
-            }
-        }
-    }
-    total
 }
