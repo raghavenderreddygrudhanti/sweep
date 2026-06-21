@@ -9,9 +9,17 @@ pub fn run() {
     let mut stdout = io::stdout();
     let _ = execute!(stdout, terminal::EnterAlternateScreen, cursor::Hide);
 
+    // Show loading immediately so screen isn't blank
+    let _ = execute!(stdout, cursor::MoveTo(0, 0), terminal::Clear(terminal::ClearType::All));
+    let mut loading = super::ui::tui_header("\x1b[33mSystem Status\x1b[0m");
+    loading.push_str("  \x1b[33mLoading system info...\x1b[0m\r\n");
+    let _ = stdout.write_all(loading.as_bytes());
+    let _ = stdout.flush();
+
     let mut sys = System::new_all();
     sys.refresh_all();
     std::thread::sleep(std::time::Duration::from_millis(500));
+    sys.refresh_all();
 
     loop {
         sys.refresh_all();
