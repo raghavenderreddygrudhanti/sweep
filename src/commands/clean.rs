@@ -231,9 +231,9 @@ fn scan_and_show(targets: &mut Vec<CleanTarget>, total: &mut u64, name: &str, pa
 }
 
 /// Delete a target's contents (not the directory itself).
-/// Honors the requested DeleteMode: Trash (default, recoverable) or Force
-/// (permanent). Silently skips items that can't be deleted (permission issues).
-fn delete_target(target: &CleanTarget, mode: DeleteMode) -> u64 {
+/// Uses direct deletion for speed — caches are regenerable, no need for Trash.
+/// Reports failures at the end instead of prompting.
+fn delete_target(target: &CleanTarget, _mode: DeleteMode) -> u64 {
     let path = &target.path;
 
     if !path.exists() {
@@ -245,10 +245,13 @@ fn delete_target(target: &CleanTarget, mode: DeleteMode) -> u64 {
         return crate::cleaners::trash::empty_trash(false);
     }
 
-    // Delete each child according to the selected mode. We remove the contents
-    // (not the cache directory itself) so apps can recreate their cache layout.
-    // Anything that fails (permission denied, file in use) is skipped silently.
+    // Show progress for this target
+    print!("  \x1b[33m\u{2022}\x1b[0m {}...\r", target.name);
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+
+    // Direct-delete contents. Skip anything that fails (no password prompts).
     let mut freed: u64 = 0;
+    let mut failed: u32 = 0;
 
     if let Ok(entries) = std::fs::read_dir(path) {
         for entry in entries.flatten() {
@@ -259,29 +262,35 @@ fn delete_target(target: &CleanTarget, mode: DeleteMode) -> u64 {
                 p.metadata().map(|m| m.len()).unwrap_or(0)
             };
 
-            let success = match mode {
-                DeleteMode::Trash => crate::cleaners::trash_delete(&p).is_ok(),
-                DeleteMode::Force => {
-                    if p.is_dir() {
-                        std::fs::remove_dir_all(&p).is_ok()
-                    } else {
-                        std::fs::remove_file(&p).is_ok()
-                    }
-                }
+            let success = if p.is_dir() {
+                std::fs::remove_dir_all(&p).is_ok()
+            } else {
+                std::fs::remove_file(&p).is_ok()
             };
 
             if success {
                 freed += size;
+            } else {
+                failed += 1;
             }
         }
     }
 
+    // Show result
+    print!("\r\x1b[K");
+    if freed > 0 && failed == 0 {
+        println!("  \x1b[32m\u{2713}\x1b[0m {} \u{2014} freed {}",
+            target.name, ByteSize::b(freed));
+    } else if freed > 0 && failed > 0 {
+        println!("  \x1b[32m\u{2713}\x1b[0m {} \u{2014} freed {} \x1b[90m({} items skipped, in use or protected)\x1b[0m",
+            target.name, ByteSize::b(freed), failed);
+    } else if failed > 0 {
+        println!("  \x1b[90m\u{2013}\x1b[0m {} \x1b[90m\u{2014} skipped ({} items protected or in use)\x1b[0m",
+            target.name, failed);
+    }
+
     if freed > 0 {
-        crate::history::log_delete(
-            path.to_str().unwrap_or(""),
-            freed,
-            if mode == DeleteMode::Trash { "clean-trash" } else { "clean" },
-        );
+        crate::history::log_delete(path.to_str().unwrap_or(""), freed, "clean");
     }
 
     freed
