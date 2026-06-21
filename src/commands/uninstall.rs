@@ -78,35 +78,26 @@ pub fn run(dry_run: bool, _mode: DeleteMode) {
                 else { "\x1b[37m\u{25cb}\x1b[0m" };
 
             let size_str = ByteSize::b(app.size).to_string();
-            let size_colored = if is_system {
-                format!("\x1b[90m{}\x1b[0m", size_str)
-            } else if app.size > 2_000_000_000 {
-                format!("\x1b[31m{}\x1b[0m", size_str)
-            } else if app.size > 500_000_000 {
-                format!("\x1b[33m{}\x1b[0m", size_str)
-            } else {
-                format!("\x1b[32m{}\x1b[0m", size_str)
-            };
 
             let rc = remnant_counts.get(i).copied().unwrap_or(0);
-            let extra = if rc > 0 {
-                format!(" \x1b[90m+{} remnants\x1b[0m", rc)
-            } else { "".into() };
 
-            let name = if i == selected {
-                format!("\x1b[1;36m{}\x1b[0m", app.name)
+            // Truncate name to 20 chars for alignment
+            let raw_name = if app.name.len() > 20 { format!("{}...", &app.name[..17]) } else { app.name.clone() };
+            let name_display = if i == selected {
+                format!("\x1b[1;36m{:<20}\x1b[0m", raw_name)
             } else if is_system {
-                format!("\x1b[90m{}\x1b[0m", app.name)  // gray for system apps
+                format!("\x1b[90m{:<20}\x1b[0m", raw_name)
             } else if marked[i] {
-                format!("\x1b[32m{}\x1b[0m", app.name)
+                format!("\x1b[32m{:<20}\x1b[0m", raw_name)
             } else {
-                app.name.clone()
+                format!("{:<20}", raw_name)
             };
 
-            let system_tag = if is_system { " \x1b[90m[system]\x1b[0m" } else { "" };
+            let remnant_str = if rc > 0 { format!("+{} remnants", rc) } else { String::new() };
+            let tag = if is_system { "[system]" } else { "" };
 
-            out.push_str(&format!("{} {} {:>9}  {}{}{}\r\n",
-                ptr, chk, size_colored, name, extra, system_tag));
+            out.push_str(&format!("{} {} {:>8}  {} \x1b[90m{} {}\x1b[0m\r\n",
+                ptr, chk, size_str, name_display, remnant_str, tag));
         }
 
         // Footer
