@@ -3,16 +3,17 @@ use crossterm::event::Event;
 use std::io::{self, Write};
 use bytesize::ByteSize;
 
-const MENU: &[(&str, &str, &str)] = &[
-    ("clean",     "Free up disk space (caches, logs, browsers)",  "\x1b[32m"),
-    ("AI/ML",     "Clean HuggingFace, Ollama, PyTorch caches",    "\x1b[35m"),
-    ("Dev",       "Remove old node_modules, target, .venv",       "\x1b[36m"),
-    ("Uninstall", "Remove apps and leftover files",               "\x1b[33m"),
-    ("Analyze",   "Explore what's eating disk space",             "\x1b[34m"),
-    ("Optimize",  "Flush DNS, rebuild caches, refresh services",  "\x1b[37m"),
-    ("Recommend", "Smart suggestions for space recovery",         "\x1b[32m"),
-    ("Timeline",  "See what grew or shrank recently",             "\x1b[90m"),
-    ("Status",    "Real-time system monitor (CPU/RAM/Disk)",      "\x1b[90m"),
+const MENU: &[(&str, &str, &str, &str)] = &[
+    // (label, description, color, icon)
+    ("clean",     "Free up disk space",                 "\x1b[32m", "\u{1f9f9}"),  // green
+    ("AI/ML",     "Clean model & package caches",       "\x1b[35m", "\u{1f916}"),  // magenta
+    ("Dev",       "Remove old build artifacts",         "\x1b[36m", "\u{26a1}"),   // cyan
+    ("Uninstall", "Remove apps and leftover files",     "\x1b[33m", "\u{1f5d1}"),  // yellow
+    ("Analyze",   "Explore disk usage",                 "\x1b[34m", "\u{1f4ca}"),  // blue
+    ("Optimize",  "Refresh system caches & services",   "\x1b[32m", "\u{2699}"),   // green
+    ("Recommend", "Smart space recovery suggestions",   "\x1b[33m", "\u{1f4a1}"),  // yellow
+    ("Timeline",  "What grew or shrank recently",       "\x1b[34m", "\u{1f4c8}"),  // blue
+    ("Status",    "Real-time system monitor",           "\x1b[36m", "\u{1f4bb}"),  // cyan
 ];
 
 pub fn run() {
@@ -36,16 +37,18 @@ pub fn run() {
         out.push_str(&disk_info);
         out.push_str("\r\n");
 
-        for (i, (label, desc, color)) in MENU.iter().enumerate() {
+        for (i, (label, desc, color, icon)) in MENU.iter().enumerate() {
             if i == selected {
-                out.push_str(&format!("  \x1b[32m\u{25b6}\x1b[0m {}. {}\x1b[1m{:<12}\x1b[0m {}\r\n", i+1, color, label, desc));
+                out.push_str(&format!("  \x1b[1;32m\u{25b6}\x1b[0m {} {}\x1b[1m{:<12}\x1b[0m \x1b[37m{}\x1b[0m\r\n",
+                    icon, color, label, desc));
             } else {
-                out.push_str(&format!("    {}. {:<12} \x1b[90m{}\x1b[0m\r\n", i+1, label, desc));
+                out.push_str(&format!("    {} {}{:<12}\x1b[0m \x1b[90m{}\x1b[0m\r\n",
+                    icon, color, label, desc));
             }
         }
 
         out.push_str("\r\n");
-        out.push_str("  \x1b[90m\u{2191}\u{2193} Navigate  |  Enter Select  |  M More  |  Q Quit\x1b[0m\r\n");
+        out.push_str("  \x1b[90m\u{2191}\u{2193}\x1b[0m Navigate  \x1b[90m|\x1b[0m  \x1b[32mEnter\x1b[0m Select  \x1b[90m|\x1b[0m  \x1b[33mM\x1b[0m More  \x1b[90m|\x1b[0m  \x1b[31mQ\x1b[0m Quit\r\n");
         out.push_str("\x1b[J"); // Clear rest of screen
 
         let _ = stdout.write_all(out.as_bytes());
