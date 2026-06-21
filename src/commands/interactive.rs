@@ -100,6 +100,14 @@ pub fn run() {
 }
 
 fn run_selected(idx: usize) {
+    // Drain any leftover key events from menu navigation (especially Enter)
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    let _ = crossterm::terminal::enable_raw_mode();
+    while crossterm::event::poll(std::time::Duration::from_millis(100)).unwrap_or(false) {
+        let _ = crossterm::event::read();
+    }
+    let _ = crossterm::terminal::disable_raw_mode();
+
     use crate::cleaners::DeleteMode;
     match idx {
         0 => super::clean::run(false, DeleteMode::Trash),
