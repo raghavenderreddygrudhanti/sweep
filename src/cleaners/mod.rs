@@ -99,11 +99,53 @@ pub fn remove_file_safe(path: &Path, dry_run: bool) -> u64 {
 }
 
 /// Move a path to the system Trash (recoverable).
-fn trash_delete(path: &Path) -> SweepResult<()> {
-    ::trash::delete(path).map_err(|e| SweepError::Trash {
-        path: path.to_path_buf(),
-        reason: e.to_string(),
-    })
+/// Falls back to Finder AppleScript on macOS if the trash crate fails (permission issues).
+pub(crate) fn trash_delete(path: &Path) -> SweepResult<()> {
+    // First try the trash crate (fast, no UI)
+    match ::trash::delete(path) {
+        Ok(()) => Ok(()),
+        Err(_e) => {
+            // Fallback: use Finder via osascript (always has permission on macOS)
+            #[cfg(target_os = "macos")]
+            {
+                let abs_path = if path.is_absolute() {
+                    path.to_path_buf()
+                } else {
+                    std::env::current_dir().unwrap_or_default().join(path)
+                };
+
+                let script = format!(
+                    "tell application \"Finder\" to delete POSIX file \"{}\"",
+                    abs_path.display()
+                );
+
+                let output = std::process::Command::new("osascript")
+                    .args(["-e", &script])
+                    .stderr(std::process::Stdio::piped())
+                    .output();
+
+                match output {
+                    Ok(o) if o.status.success() => Ok(()),
+                    Ok(o) => Err(SweepError::Trash {
+                        path: path.to_path_buf(),
+                        reason: String::from_utf8_lossy(&o.stderr).to_string(),
+                    }),
+                    Err(e) => Err(SweepError::Trash {
+                        path: path.to_path_buf(),
+                        reason: e.to_string(),
+                    }),
+                }
+            }
+
+            #[cfg(not(target_os = "macos"))]
+            {
+                Err(SweepError::Trash {
+                    path: path.to_path_buf(),
+                    reason: _e.to_string(),
+                })
+            }
+        }
+    }
 }
 
 /// Permanently remove a directory (irreversible).

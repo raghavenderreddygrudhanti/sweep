@@ -1,11 +1,10 @@
 //! System cache cleaner — user caches, logs, tmp files.
 
 use std::path::{Path, PathBuf};
-use dirs;
 
 /// Known system cache locations (macOS + Linux).
 pub fn cache_paths() -> Vec<PathBuf> {
-    let home = dirs::home_dir().unwrap_or_default();
+    let home = crate::error::home_or_exit();
     let mut paths = vec![];
 
     // macOS caches
@@ -27,7 +26,7 @@ pub fn cache_paths() -> Vec<PathBuf> {
 
 /// Known log locations.
 pub fn log_paths() -> Vec<PathBuf> {
-    let home = dirs::home_dir().unwrap_or_default();
+    let home = crate::error::home_or_exit();
     let mut paths = vec![];
 
     paths.push(home.join("Library/Logs"));

@@ -9,23 +9,32 @@ pub fn run() {
     let mut stdout = io::stdout();
     let _ = execute!(stdout, terminal::EnterAlternateScreen, cursor::Hide);
 
+    // Show loading immediately so screen isn't blank
+    let _ = execute!(stdout, cursor::MoveTo(0, 0), terminal::Clear(terminal::ClearType::All));
+    let mut loading = super::ui::tui_header("\x1b[33mSystem Status\x1b[0m");
+    loading.push_str("  \x1b[33mLoading system info...\x1b[0m\r\n");
+    let _ = stdout.write_all(loading.as_bytes());
+    let _ = stdout.flush();
+
     let mut sys = System::new_all();
     sys.refresh_all();
     std::thread::sleep(std::time::Duration::from_millis(500));
+    sys.refresh_all();
 
     loop {
         sys.refresh_all();
-        let _ = execute!(stdout, cursor::MoveTo(0, 0));
+        let _ = execute!(stdout, cursor::MoveTo(0, 0), terminal::Clear(terminal::ClearType::All));
 
         let out = build_status(&sys);
         let _ = stdout.write_all(out.as_bytes());
-        let _ = stdout.write_all(b"\x1b[J");
         let _ = stdout.flush();
 
         if event::poll(std::time::Duration::from_millis(1000)).unwrap_or(false) {
             if let Ok(event::Event::Key(key)) = event::read() {
-                if key.code == event::KeyCode::Char('q') || key.code == event::KeyCode::Esc {
-                    break;
+                match key.code {
+                    event::KeyCode::Char('q') | event::KeyCode::Char('b')
+                    | event::KeyCode::Esc => break,
+                    _ => {}
                 }
             }
         }
@@ -43,64 +52,54 @@ fn build_status(sys: &System) -> String {
     let mem_pct = (used_mem as f64 / total_mem as f64 * 100.0) as u64;
     let host = System::host_name().unwrap_or_else(|| "Mac".into());
     let os_ver = System::os_version().unwrap_or_else(|| "?".into());
-    let cpu_brand = sys.cpus().first().map(|c| c.brand().to_string()).unwrap_or_default();
     let uptime = System::uptime();
     let days = uptime / 86400;
     let hours = (uptime % 86400) / 3600;
     let health = compute_health(total_cpu, mem_pct);
-    let health_dot = if health >= 80 { "\x1b[32m●\x1b[0m" } else if health >= 50 { "\x1b[33m●\x1b[0m" } else { "\x1b[31m●\x1b[0m" };
+    let health_dot = if health >= 80 { "\x1b[32m\u{25cf}\x1b[0m" }
+        else if health >= 50 { "\x1b[33m\u{25cf}\x1b[0m" }
+        else { "\x1b[31m\u{25cf}\x1b[0m" };
 
     let mut o = String::new();
 
-    // Header
-    o.push_str("\r\n");
-    o.push_str("    \x1b[36m____\x1b[0m\r\n");
-    o.push_str("   \x1b[36m/ ___|\x1b[0m_      _____  ___ _ __\r\n");
-    o.push_str("   \x1b[36m\\___ \\\x1b[0m\\ \\ /\\ / / _ \\/ _ \\ '_ \\\r\n");
-    o.push_str("    \x1b[36m___) |\x1b[0m\\ V  V /  __/  __/ |_) |\r\n");
-    o.push_str("   \x1b[36m|____/\x1b[0m  \\_/\\_/ \\___|\\___| .__/\r\n");
-    o.push_str("                           |_|\r\n");
-    o.push_str(&format!("   \x1b[32m{}\x1b[0m\r\n", "github.com/raghavenderreddygrudhanti/sweep"));
-    o.push_str("   \x1b[90mFast system cleaner · Rust · macOS + Linux\x1b[0m\r\n");
-    o.push_str("\r\n");
-    o.push_str("  \x1b[90m›\x1b[0m  \x1b[33mSystem Status\x1b[0m\r\n");
-    o.push_str("  \x1b[90m─────────────────────────────────────────────\x1b[0m\r\n");
-    o.push_str(&format!("  Health {} \x1b[1m{}\x1b[0m  \x1b[90m{} · {} · {} · macOS {} · up {}d {}h\x1b[0m\x1b[K\r\n",
-        health_dot, health, host, cpu_brand, ByteSize::b(total_mem), os_ver, days, hours));
-    o.push_str("\x1b[K\r\n");
+    // Compact header
+    o.push_str(&super::ui::tui_header("\x1b[33mSystem Status\x1b[0m"));
 
-    // Two-column layout
-    // Left: CPU + Memory | Right: Disk + Power
+    // System info line
+    o.push_str(&format!("  {} Health \x1b[1m{}\x1b[0m  \x1b[90m{} \u{b7} macOS {} \u{b7} up {}d {}h\x1b[0m\r\n",
+        health_dot, health, host, os_ver, days, hours));
+    o.push_str("\r\n");
 
     // ─── CPU ───
-    o.push_str("  \x1b[33m● CPU\x1b[0m \x1b[90m─────────────────────────────\x1b[0m\x1b[K\r\n");
-    o.push_str(&format!("  Total {} {:>5.1}%\x1b[K\r\n", bar(total_cpu as u64, 100), total_cpu));
+    o.push_str("  \x1b[1;33mCPU\x1b[0m\r\n");
+    o.push_str(&format!("  Total  {} {:>5.1}%\r\n", bar(total_cpu as u64, 100), total_cpu));
     for (i, cpu) in sys.cpus().iter().take(4).enumerate() {
         let u = cpu.cpu_usage();
-        o.push_str(&format!("  Core{} {} {:>5.1}%\x1b[K\r\n", i+1, bar(u as u64, 100), u));
+        o.push_str(&format!("  Core{} {} {:>5.1}%\r\n", i + 1, bar(u as u64, 100), u));
     }
     if cpu_cores > 4 {
-        o.push_str(&format!("  \x1b[90m(+{} more cores)\x1b[0m\x1b[K\r\n", cpu_cores - 4));
+        o.push_str(&format!("  \x1b[90m(+{} more cores)\x1b[0m\r\n", cpu_cores - 4));
     }
-    o.push_str("\x1b[K\r\n");
+    o.push_str("\r\n");
 
     // ─── Memory ───
-    o.push_str("  \x1b[33m▦ Memory\x1b[0m \x1b[90m──────────────────────────\x1b[0m\x1b[K\r\n");
+    o.push_str("  \x1b[1;33mMemory\x1b[0m\r\n");
     let free_mem = total_mem - used_mem;
-    o.push_str(&format!("  Used  {} {:>3}%\x1b[K\r\n", bar(mem_pct, 100), mem_pct));
-    o.push_str(&format!("  Free  {} {:>3}%\x1b[K\r\n", bar_green(100 - mem_pct, 100), 100 - mem_pct));
+    o.push_str(&format!("  Used {} {:>3}%  {}/{}\r\n",
+        bar(mem_pct, 100), mem_pct, ByteSize::b(used_mem), ByteSize::b(total_mem)));
+    o.push_str(&format!("  Free {} {:>3}%  \x1b[32m{}\x1b[0m\r\n",
+        bar_green(100 - mem_pct, 100), 100 - mem_pct, ByteSize::b(free_mem)));
     let swap_used = sys.used_swap();
     let swap_total = sys.total_swap();
     if swap_total > 0 {
         let sp = (swap_used as f64 / swap_total as f64 * 100.0) as u64;
-        o.push_str(&format!("  Swap  {} {:>3}%  {}/{}\x1b[K\r\n", bar(sp, 100), sp, ByteSize::b(swap_used), ByteSize::b(swap_total)));
+        o.push_str(&format!("  Swap {} {:>3}%  {}/{}\r\n",
+            bar(sp, 100), sp, ByteSize::b(swap_used), ByteSize::b(swap_total)));
     }
-    o.push_str(&format!("  Total {} / {}  Avail \x1b[32m{}\x1b[0m\x1b[K\r\n",
-        ByteSize::b(used_mem), ByteSize::b(total_mem), ByteSize::b(free_mem)));
-    o.push_str("\x1b[K\r\n");
+    o.push_str("\r\n");
 
     // ─── Disk ───
-    o.push_str("  \x1b[33m▤ Disk\x1b[0m \x1b[90m────────────────────────────\x1b[0m\x1b[K\r\n");
+    o.push_str("  \x1b[1;33mDisk\x1b[0m\r\n");
     let disks = Disks::new_with_refreshed_list();
     for disk in disks.list() {
         if disk.mount_point().to_string_lossy() == "/" {
@@ -108,80 +107,65 @@ fn build_status(sys: &System) -> String {
             let avail = disk.available_space();
             let used = total - avail;
             let pct = (used as f64 / total as f64 * 100.0) as u64;
-            o.push_str(&format!("  {} {} {:>3}%  {} used, \x1b[32m{} free\x1b[0m\x1b[K\r\n",
-                "INTR", bar(pct, 100), pct, ByteSize::b(used), ByteSize::b(avail)));
+            o.push_str(&format!("  Main {} {:>3}%  {} / {} (\x1b[32m{} free\x1b[0m)\r\n",
+                bar(pct, 100), pct, ByteSize::b(used), ByteSize::b(total), ByteSize::b(avail)));
         }
     }
-    o.push_str("\x1b[K\r\n");
+    o.push_str("\r\n");
 
     // ─── Power ───
     if let Some(batt) = get_battery_info() {
-        o.push_str("  \x1b[33m⚡ Power\x1b[0m \x1b[90m───────────────────────────\x1b[0m\x1b[K\r\n");
-        o.push_str(&format!("  Level  {} {:>3}%\x1b[K\r\n", bar_green(batt.level, 100), batt.level));
-        o.push_str(&format!("  \x1b[32m{}\x1b[0m · {} cycles\x1b[K\r\n", batt.status, batt.cycles));
-        o.push_str("\x1b[K\r\n");
+        o.push_str("  \x1b[1;33mPower\x1b[0m\r\n");
+        o.push_str(&format!("  {} {} {:>3}%  \x1b[90m{} cycles\x1b[0m\r\n",
+            batt.status, bar_green(batt.level, 100), batt.level, batt.cycles));
+        o.push_str("\r\n");
     }
 
-    // ─── Processes ───
-    o.push_str("  \x1b[33m⚙ Processes\x1b[0m \x1b[90m────────────────────────\x1b[0m\x1b[K\r\n");
+    // ─── Top Processes ───
+    o.push_str("  \x1b[1;33mTop Processes\x1b[0m\r\n");
     let mut procs: Vec<_> = sys.processes().values()
         .map(|p| (p.name().to_string(), p.cpu_usage(), p.memory()))
         .filter(|(_, cpu, _)| *cpu > 3.0)
         .collect();
     procs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    if procs.is_empty() {
+        o.push_str("  \x1b[90mAll quiet\x1b[0m\r\n");
+    }
     for (name, cpu, mem) in procs.iter().take(5) {
-        let n: &str = if name.len() > 15 { &name[..15] } else { name.as_str() };
-        let hot = if *cpu > 80.0 { " \x1b[31mhot\x1b[0m" } else { "" };
-        o.push_str(&format!("  {:<15} {} {:>5.1}% {:>8}{}\x1b[K\r\n",
-            n, mini_bar(*cpu as u64), cpu, ByteSize::b(*mem), hot));
+        let n = if name.len() > 18 { &name[..18] } else { name.as_str() };
+        let hot = if *cpu > 80.0 { " \x1b[31m\u{25cf}\x1b[0m" } else { "" };
+        o.push_str(&format!("  {:<18} {:>5.1}% {:>8}{}\r\n",
+            n, cpu, ByteSize::b(*mem), hot));
     }
-    o.push_str("\x1b[K\r\n");
-
-    // ─── Network ───
-    o.push_str("  \x1b[33m⇅ Network\x1b[0m \x1b[90m─────────────────────────\x1b[0m\x1b[K\r\n");
-    let networks = sysinfo::Networks::new_with_refreshed_list();
-    let mut total_rx = 0u64;
-    let mut total_tx = 0u64;
-    for (_name, data) in networks.list() {
-        total_rx += data.received();
-        total_tx += data.transmitted();
-    }
-    o.push_str(&format!("  Down  {}/s\x1b[K\r\n", ByteSize::b(total_rx)));
-    o.push_str(&format!("  Up    {}/s\x1b[K\r\n", ByteSize::b(total_tx)));
-    o.push_str("\x1b[K\r\n");
+    o.push_str("\r\n");
 
     // Footer
-    o.push_str("  \x1b[90m──────────────────────────────────────\x1b[0m\x1b[K\r\n");
-    o.push_str("  \x1b[90mq quit · refreshes every 1s\x1b[0m\x1b[K\r\n");
+    o.push_str("  \x1b[90m\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\x1b[0m\r\n");
+    o.push_str("  \x1b[90mb back \u{b7} q quit \u{b7} refreshes every 1s\x1b[0m\r\n");
 
     o
 }
 
 fn bar(value: u64, max: u64) -> String {
-    let width: usize = 15;
+    let width: usize = 12;
     let filled = (value as f64 / max as f64 * width as f64).min(width as f64) as usize;
     let empty = width.saturating_sub(filled);
-    let b = format!("{}{}", "█".repeat(filled), "░".repeat(empty));
-    if value > 80 { format!("\x1b[31m{}\x1b[0m", b) }
-    else if value > 60 { format!("\x1b[33m{}\x1b[0m", b) }
-    else { format!("\x1b[32m{}\x1b[0m", b) }
+    let color = if value > 80 { "\x1b[31m" }
+        else if value > 60 { "\x1b[33m" }
+        else { "\x1b[32m" };
+    format!("{}\u{2501}{}\x1b[0m\x1b[90m{}\x1b[0m",
+        color,
+        "\u{2501}".repeat(filled.saturating_sub(1).max(0)),
+        "\u{2508}".repeat(empty))
 }
 
 fn bar_green(value: u64, max: u64) -> String {
-    let width: usize = 15;
+    let width: usize = 12;
     let filled = (value as f64 / max as f64 * width as f64).min(width as f64) as usize;
     let empty = width.saturating_sub(filled);
-    format!("\x1b[32m{}\x1b[0m\x1b[90m{}\x1b[0m", "█".repeat(filled), "░".repeat(empty))
-}
-
-fn mini_bar(value: u64) -> String {
-    let width: usize = 5;
-    let filled = (value as f64 / 100.0 * width as f64).min(width as f64) as usize;
-    let empty = width.saturating_sub(filled);
-    let b = format!("{}{}", "▮".repeat(filled), "▯".repeat(empty));
-    if value > 80 { format!("\x1b[31m{}\x1b[0m", b) }
-    else if value > 50 { format!("\x1b[33m{}\x1b[0m", b) }
-    else { format!("\x1b[32m{}\x1b[0m", b) }
+    format!("\x1b[32m{}\x1b[0m\x1b[90m{}\x1b[0m",
+        "\u{2501}".repeat(filled),
+        "\u{2508}".repeat(empty))
 }
 
 fn compute_health(cpu: f32, mem: u64) -> u64 {
@@ -200,9 +184,9 @@ fn get_battery_info() -> Option<BatteryInfo> {
         .find(|s| s.ends_with("%;") || s.ends_with('%'))
         .and_then(|s| s.trim_end_matches(|c| c == '%' || c == ';').parse::<u64>().ok())
         .unwrap_or(0);
-    let status = if stdout.contains("charging") { "Charging" }
-        else if stdout.contains("charged") { "Charged" }
-        else { "Battery" };
+    let status = if stdout.contains("charging") { "\u{26a1} Charging" }
+        else if stdout.contains("charged") { "\u{2713} Charged" }
+        else { "\u{1f50b} Battery" };
     let sp = Command::new("system_profiler").args(["SPPowerDataType"]).output().ok()?;
     let sp_out = String::from_utf8_lossy(&sp.stdout);
     let cycles = sp_out.lines()

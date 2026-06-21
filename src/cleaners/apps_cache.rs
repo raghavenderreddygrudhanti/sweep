@@ -1,11 +1,10 @@
 //! App-specific cache cleaner — Spotify, Slack, Discord, Teams, VS Code, etc.
 
 use std::path::PathBuf;
-use dirs;
 
 /// Known app caches that can safely be cleaned.
 pub fn app_cache_paths() -> Vec<(PathBuf, &'static str)> {
-    let home = dirs::home_dir().unwrap_or_default();
+    let home = crate::error::home_or_exit();
     let caches = home.join("Library/Caches");
     let support = home.join("Library/Application Support");
 

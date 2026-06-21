@@ -9,9 +9,13 @@ use crate::cleaners::dev as dev_cleaner;
 use crate::cleaners::DeleteMode;
 
 pub fn run(dry_run: bool, older_than_days: u64, _mode: DeleteMode) {
+    // Clear screen for a fresh view
+    print!("\x1b[2J\x1b[H");
+    let _ = io::stdout().flush();
+
     let mode = if dry_run { "(preview)" } else { "" };
-    super::ui::print_header(&format!("\x1b[1;35m⚡ Dev Artifacts\x1b[0m {} — older than {}d", mode, older_than_days));
-    print!("  ⏳ Scanning...");
+    super::ui::print_header(&format!("\x1b[1;36m\u{26a1} Dev Artifacts\x1b[0m {} \u{2014} older than {}d", mode, older_than_days));
+    print!("  \x1b[33m\u{2022}\x1b[0m Scanning...");
     let _ = io::stdout().flush();
 
     let start = Instant::now();
@@ -22,7 +26,11 @@ pub fn run(dry_run: bool, older_than_days: u64, _mode: DeleteMode) {
         .checked_sub(Duration::from_secs(older_than_days * 86400))
         .unwrap_or(SystemTime::UNIX_EPOCH);
 
-    for name in dev_cleaner::DEV_ARTIFACTS {
+    for (i, name) in dev_cleaner::DEV_ARTIFACTS.iter().enumerate() {
+        print!("\r\x1b[K  \x1b[33m{}\x1b[0m Scanning for {}...",
+            super::ui::spinner(i), name);
+        let _ = io::stdout().flush();
+
         for root in &roots {
             let matches = scanner::find_dirs_by_name(root, name, 4);
             for m in matches {
@@ -40,10 +48,19 @@ pub fn run(dry_run: bool, older_than_days: u64, _mode: DeleteMode) {
 
     found.sort_by(|a, b| b.1.cmp(&a.1));
     let elapsed = start.elapsed().as_secs_f64();
-    println!(" found {} items in {:.1}s", found.len(), elapsed);
+    print!("\r\x1b[K");
+    println!("  \x1b[32m\u{2713}\x1b[0m Found {} items in {:.1}s", found.len(), elapsed);
 
     if found.is_empty() {
-        println!("\n  ✨ No old build artifacts found.\n");
+        println!("\n  \x1b[32m\u{2713}\x1b[0m No old build artifacts found.\n");
+        println!("  \x1b[90mPress any key to continue...\x1b[0m");
+        let _ = crossterm::terminal::enable_raw_mode();
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        while crossterm::event::poll(std::time::Duration::from_millis(150)).unwrap_or(false) {
+            let _ = crossterm::event::read();
+        }
+        let _ = crossterm::event::read();
+        let _ = crossterm::terminal::disable_raw_mode();
         return;
     }
 
@@ -53,6 +70,12 @@ pub fn run(dry_run: bool, older_than_days: u64, _mode: DeleteMode) {
     let _ = execute!(stdout, terminal::EnterAlternateScreen, cursor::Hide);
 
     let mut selected: usize = 0;
+
+    // Drain any stray Enter from menu
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    while event::poll(std::time::Duration::from_millis(100)).unwrap_or(false) {
+        let _ = event::read();
+    }
 
     loop {
         let _ = execute!(stdout, cursor::MoveTo(0, 0), terminal::Clear(terminal::ClearType::All));
@@ -67,7 +90,7 @@ pub fn run(dry_run: bool, older_than_days: u64, _mode: DeleteMode) {
         out.push_str("\r\n");
 
         for (i, (path, size, kind, checked)) in found.iter().take(15).enumerate() {
-            let short = path.replace(&dirs::home_dir().unwrap_or_default().to_string_lossy().to_string(), "~");
+            let short = path.replace(&crate::error::home_or_exit().to_string_lossy().to_string(), "~");
             let short_display = if short.len() > 45 { &short[short.len()-45..] } else { &short };
 
             let ptr = if i == selected { " \x1b[32m▶\x1b[0m" } else { "  " };
@@ -126,6 +149,16 @@ pub fn run(dry_run: bool, older_than_days: u64, _mode: DeleteMode) {
                         }
                         println!("\n  🎉 Freed: {}\n", ByteSize::b(freed).to_string().bold().green());
                     }
+
+                    // Pause so user can see results
+                    println!("  \x1b[90mPress any key to continue...\x1b[0m");
+                    let _ = terminal::enable_raw_mode();
+                    std::thread::sleep(std::time::Duration::from_millis(300));
+                    while event::poll(std::time::Duration::from_millis(100)).unwrap_or(false) {
+                        let _ = event::read();
+                    }
+                    let _ = event::read();
+                    let _ = terminal::disable_raw_mode();
                     return;
                 }
                 KeyCode::Char('q') | KeyCode::Esc => {

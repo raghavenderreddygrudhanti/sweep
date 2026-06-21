@@ -18,7 +18,7 @@ pub fn run(dry_run: bool, _mode: DeleteMode) {
     let _ = stdout.write_all(out.as_bytes());
     let _ = stdout.flush();
 
-    let apps_list = apps::find_installed_apps();
+    let mut apps_list = apps::find_installed_apps();
 
     if apps_list.is_empty() {
         let _ = execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show);
@@ -30,9 +30,15 @@ pub fn run(dry_run: bool, _mode: DeleteMode) {
     let mut selected: usize = 0;
     let mut marked: Vec<bool> = vec![false; apps_list.len()];
     let max_display = 18;
+    let mut first_frame = true;
 
     loop {
-        let _ = execute!(stdout, cursor::MoveTo(0, 0), terminal::Clear(terminal::ClearType::All));
+        if first_frame {
+            let _ = execute!(stdout, cursor::MoveTo(0, 0), terminal::Clear(terminal::ClearType::All));
+            first_frame = false;
+        } else {
+            let _ = execute!(stdout, cursor::MoveTo(0, 0));
+        }
 
         let marked_count = marked.iter().filter(|&&m| m).count();
         let marked_size: u64 = apps_list.iter().enumerate()
@@ -54,13 +60,28 @@ pub fn run(dry_run: bool, _mode: DeleteMode) {
 
         for i in scroll_start..display_end {
             let app = &apps_list[i];
-            let ptr = if i == selected { " \x1b[32m▶\x1b[0m" } else { "  " };
-            let chk = if marked[i] { "\x1b[32m●\x1b[0m" } else { "\x1b[90m○\x1b[0m" };
+            let is_system = app.path.metadata()
+                .map(|m| {
+                    use std::os::unix::fs::MetadataExt;
+                    m.uid() == 0 // owned by root
+                })
+                .unwrap_or(false);
+
+            let ptr = if i == selected { " \x1b[32m\u{25b6}\x1b[0m" } else { "  " };
+            let chk = if marked[i] { "\x1b[32m\u{25cf}\x1b[0m" }
+                else if is_system { "\x1b[90m\u{25cb}\x1b[0m" }  // gray circle for system
+                else { "\x1b[37m\u{25cb}\x1b[0m" };              // white circle for user
 
             let size_str = ByteSize::b(app.size).to_string();
-            let size_colored = if app.size > 2_000_000_000 { format!("\x1b[31m{}\x1b[0m", size_str) }
-                else if app.size > 500_000_000 { format!("\x1b[33m{}\x1b[0m", size_str) }
-                else { size_str };
+            let size_colored = if is_system {
+                format!("\x1b[90m{}\x1b[0m", size_str)  // gray for system
+            } else if app.size > 2_000_000_000 {
+                format!("\x1b[31m{}\x1b[0m", size_str)  // red for >2GB
+            } else if app.size > 500_000_000 {
+                format!("\x1b[33m{}\x1b[0m", size_str)  // yellow for >500MB
+            } else {
+                format!("\x1b[32m{}\x1b[0m", size_str)  // green for small
+            };
 
             let remnants = apps::find_app_remnants(app);
             let extra = if !remnants.is_empty() {
@@ -69,14 +90,18 @@ pub fn run(dry_run: bool, _mode: DeleteMode) {
 
             let name = if i == selected {
                 format!("\x1b[1;36m{}\x1b[0m", app.name)
+            } else if is_system {
+                format!("\x1b[90m{}\x1b[0m", app.name)  // gray for system apps
             } else if marked[i] {
                 format!("\x1b[32m{}\x1b[0m", app.name)
             } else {
                 app.name.clone()
             };
 
-            out.push_str(&format!("{} {} \x1b[1m{:>9}\x1b[0m  {}{}\r\n",
-                ptr, chk, size_colored, name, extra));
+            let system_tag = if is_system { " \x1b[90m[system]\x1b[0m" } else { "" };
+
+            out.push_str(&format!("{} {} {:>9}  {}{}{}\r\n",
+                ptr, chk, size_colored, name, extra, system_tag));
         }
 
         // Footer
@@ -86,6 +111,7 @@ pub fn run(dry_run: bool, _mode: DeleteMode) {
         } else {
             out.push_str(super::ui::footer_list());
         }
+        out.push_str("\x1b[J"); // Clear rest of screen
 
         let _ = stdout.write_all(out.as_bytes());
         let _ = stdout.flush();
@@ -137,7 +163,7 @@ pub fn run(dry_run: bool, _mode: DeleteMode) {
                             for (i, app) in apps_list.iter().enumerate() {
                                 if marked[i] {
                                     // Use mv to Trash instead of osascript
-                                    let trash = dirs::home_dir().unwrap_or_default().join(".Trash");
+                                    let trash = crate::error::home_or_exit().join(".Trash");
                                     let dest = trash.join(app.path.file_name().unwrap_or_default());
                                     let _ = std::process::Command::new("mv")
                                         .arg(&app.path)
@@ -168,7 +194,10 @@ pub fn run(dry_run: bool, _mode: DeleteMode) {
                             }
                             let _ = event::read(); // wait for keypress
                         }
-                        break;
+                        // Refresh list after deletion
+                        apps_list = apps::find_installed_apps();
+                        marked = vec![false; apps_list.len()];
+                        selected = 0;
                     } else if selected < apps_list.len() {
                         // Single app — confirm in TUI
                         let app = &apps_list[selected];
@@ -195,35 +224,48 @@ pub fn run(dry_run: bool, _mode: DeleteMode) {
                             let _ = stdout.write_all(progress.as_bytes());
                             let _ = stdout.flush();
 
-                            let trash = dirs::home_dir().unwrap_or_default().join(".Trash");
+                            let trash = crate::error::home_or_exit().join(".Trash");
                             let dest = trash.join(app.path.file_name().unwrap_or_default());
                             let _ = std::process::Command::new("mv")
                                 .arg(&app.path)
                                 .arg(&dest)
+                                .stderr(std::process::Stdio::null())
                                 .output();
-                            let remnants = apps::find_app_remnants(app);
-                            for r in &remnants {
-                                let rdest = trash.join(r.file_name().unwrap_or_default());
-                                let _ = std::process::Command::new("mv")
-                                    .arg(r)
-                                    .arg(&rdest)
-                                    .output();
-                            }
-                            crate::history::log_delete(&app.path.display().to_string(), app.size, "uninstall");
 
-                            let _ = stdout.write_all(format!(
-                                "  \x1b[1;32m✓ {} (+{} remnants) moved to Trash\x1b[0m\r\n\r\n  \x1b[90mPress any key to return...\x1b[0m\r\n",
-                                app.name, remnants.len()
-                            ).as_bytes());
+                            // Check if it actually got deleted
+                            if app.path.exists() {
+                                let _ = stdout.write_all(format!(
+                                    "  \x1b[31m\u{2717}\x1b[0m {} \x1b[90m(system app, needs admin)\x1b[0m\r\n",
+                                    app.name
+                                ).as_bytes());
+                            } else {
+                                let remnants = apps::find_app_remnants(app);
+                                for r in &remnants {
+                                    let rdest = trash.join(r.file_name().unwrap_or_default());
+                                    let _ = std::process::Command::new("mv")
+                                        .arg(r)
+                                        .arg(&rdest)
+                                        .stderr(std::process::Stdio::null())
+                                        .output();
+                                }
+                                crate::history::log_delete(&app.path.display().to_string(), app.size, "uninstall");
+                                let _ = stdout.write_all(format!(
+                                    "  \x1b[32m\u{2713}\x1b[0m {} (+{} remnants) moved to Trash\r\n",
+                                    app.name, remnants.len()
+                                ).as_bytes());
+                            }
+                            let _ = stdout.write_all(b"\r\n  \x1b[90mPress any key to continue...\x1b[0m\r\n");
                             let _ = stdout.flush();
-                            // Drain + wait
                             std::thread::sleep(std::time::Duration::from_millis(200));
                             while event::poll(std::time::Duration::from_millis(100)).unwrap_or(false) {
                                 let _ = event::read();
                             }
                             let _ = event::read();
                         }
-                        break;
+                        // Refresh list after deletion
+                        apps_list = apps::find_installed_apps();
+                        marked = vec![false; apps_list.len()];
+                        if selected >= apps_list.len() && selected > 0 { selected -= 1; }
                     }
                 }
                 super::ui::NavAction::Back | super::ui::NavAction::Quit => break,

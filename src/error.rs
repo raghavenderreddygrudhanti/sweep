@@ -34,5 +34,24 @@ pub type SweepResult<T> = Result<T, SweepError>;
 
 /// Get home directory or return error.
 pub fn home_dir() -> SweepResult<PathBuf> {
-    dirs::home_dir().ok_or(SweepError::NoHomeDir)
+    match dirs::home_dir() {
+        Some(h) if !h.as_os_str().is_empty() => Ok(h),
+        _ => Err(SweepError::NoHomeDir),
+    }
+}
+
+/// Get the home directory, or print an error and exit.
+///
+/// This replaces the `dirs::home_dir().unwrap_or_default()` footgun: an empty
+/// `PathBuf` turns absolute-looking joins like `home.join("Library/Caches")`
+/// into *current-directory-relative* paths, which could cause scans/deletes to
+/// hit unintended locations. Aborting is always safer than guessing.
+pub fn home_or_exit() -> PathBuf {
+    match home_dir() {
+        Ok(h) => h,
+        Err(_) => {
+            eprintln!("sweep: could not determine your home directory; aborting for safety.");
+            std::process::exit(1);
+        }
+    }
 }

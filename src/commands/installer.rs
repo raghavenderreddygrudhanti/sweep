@@ -5,13 +5,13 @@ use crate::cleaners::DeleteMode;
 
 pub fn run(dry_run: bool, _mode: DeleteMode) {
     let mode = if dry_run { "(preview)" } else { "" };
-    super::ui::print_header(&format!("\x1b[1;33m📦 Installer Cleanup\x1b[0m {}", mode));
+    super::ui::print_header(&format!("\x1b[1;33m\u{1f4e6} Installer Cleanup\x1b[0m {}", mode));
 
     let installers = optimize::find_installers();
 
     if installers.is_empty() {
         println!("  ✨ No installer files found.");
-        super::ui::wait_any_key();
+
         return;
     }
 
@@ -32,5 +32,5 @@ pub fn run(dry_run: bool, _mode: DeleteMode) {
         println!("  🎉 Freed: {}", ByteSize::b(total).to_string().bold().green());
     }
 
-    super::ui::wait_any_key();
+
 }

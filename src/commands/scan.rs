@@ -9,24 +9,24 @@ use crossterm::event::Event;
 use std::io::{self, Write};
 use crate::{scanner, cache};
 
-/// Try to delete a file/folder. Uses direct rm (no Finder GUI popups).
-/// For user safety, moves to ~/.Trash when possible, falls back to sudo via macOS auth dialog.
+/// Try to delete a file/folder. Uses direct rm (no GUI popups).
+/// Moves to ~/.Trash first (recoverable), falls back to rm -rf.
+/// Never prompts for password — silently fails if no permission.
 fn try_delete(path: &str) -> bool {
     let p = PathBuf::from(path);
     if !p.exists() { return true; }
 
     let size = if p.is_dir() {
-        crate::scanner::scan_size(&p).0
+        crate::scanner::scan_size_native(&p)
     } else {
         p.metadata().map(|m| m.len()).unwrap_or(0)
     };
 
-    // Strategy 1: Move to ~/.Trash (recoverable, no GUI popup)
-    let trash_dir = dirs::home_dir().unwrap_or_default().join(".Trash");
+    // Strategy 1: Move to ~/.Trash (recoverable, no popup)
+    let trash_dir = crate::error::home_or_exit().join(".Trash");
     let file_name = p.file_name().unwrap_or_default().to_string_lossy().to_string();
     let mut trash_dest = trash_dir.join(&file_name);
 
-    // Handle name collision in Trash
     if trash_dest.exists() {
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -35,55 +35,43 @@ fn try_delete(path: &str) -> bool {
         trash_dest = trash_dir.join(format!("{}_{}", file_name, timestamp));
     }
 
-    // Try mv to Trash
     let mv_result = std::process::Command::new("mv")
         .arg(path)
         .arg(&trash_dest)
-        .output();
+        .stderr(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .status();
 
-    if let Ok(output) = mv_result {
-        if output.status.success() && !p.exists() {
+    if let Ok(s) = mv_result {
+        if s.success() && !p.exists() {
             crate::history::log_delete(path, size, "trash");
             return true;
         }
     }
 
-    // Strategy 2: Direct rm -rf (works for most owned files)
+    // Strategy 2: Direct rm -rf (works for owned files)
     let rm_result = if p.is_dir() {
         std::process::Command::new("rm")
             .args(["-rf", path])
-            .output()
+            .stderr(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .status()
     } else {
         std::process::Command::new("rm")
             .args(["-f", path])
-            .output()
+            .stderr(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .status()
     };
 
-    if let Ok(output) = rm_result {
-        if output.status.success() && !p.exists() {
+    if let Ok(s) = rm_result {
+        if s.success() && !p.exists() {
             crate::history::log_delete(path, size, "delete");
             return true;
         }
     }
 
-    // Strategy 3: Use macOS auth dialog (like Mole does) — prompts for password
-    let script = if p.is_dir() {
-        format!("do shell script \"rm -rf '{}'\" with administrator privileges", path.replace('\'', "'\\''"))
-    } else {
-        format!("do shell script \"rm -f '{}'\" with administrator privileges", path.replace('\'', "'\\''"))
-    };
-
-    let auth_result = std::process::Command::new("osascript")
-        .args(["-e", &script])
-        .output();
-
-    if let Ok(output) = auth_result {
-        if output.status.success() && !p.exists() {
-            crate::history::log_delete(path, size, "sudo-delete");
-            return true;
-        }
-    }
-
+    // No admin password prompt — just fail silently
     false
 }
 
@@ -96,7 +84,7 @@ struct Category {
 }
 
 fn get_categories() -> Vec<Category> {
-    let home = dirs::home_dir().unwrap_or_default();
+    let home = crate::error::home_or_exit();
     vec![
         Category { name: "Caches", path: home.join("Library/Caches"), size: -1, cleanable: true, color: "32" },
         Category { name: "App Support", path: home.join("Library/Application Support"), size: -1, cleanable: false, color: "33" },
@@ -297,9 +285,26 @@ pub fn run(path: &str) {
         let _ = stdout.write_all(out.as_bytes());
         let _ = stdout.flush();
 
-        // Input with timeout (so we can update scanning results)
-        if event::poll(std::time::Duration::from_millis(300)).unwrap_or(false) {
+        // Input — block until key press or 50ms timeout for scan updates
+        let scanning = categories.iter().any(|c| c.size < 0);
+        let timeout = if scanning { std::time::Duration::from_millis(50) } else { std::time::Duration::from_millis(2000) };
+        
+        if event::poll(timeout).unwrap_or(false) {
             if let Ok(Event::Key(key)) = event::read() {
+                // Always allow q and Ctrl+C to quit immediately
+                if key.code == crossterm::event::KeyCode::Char('q')
+                    || key.code == crossterm::event::KeyCode::Char('Q')
+                    || (key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
+                        && key.code == crossterm::event::KeyCode::Char('c'))
+                {
+                    if !confirm_delete {
+                        break;
+                    } else {
+                        confirm_delete = false;
+                        status_msg.clear();
+                        continue;
+                    }
+                }
                 let item_count = if mode == "overview" {
                     categories.iter().filter(|c| c.size > 0).count()
                 } else {
@@ -313,21 +318,15 @@ pub fn run(path: &str) {
                         super::ui::NavAction::Char('y') | super::ui::NavAction::Char('Y') => {
                             if mode == "folder" && selected < folder_results.len() {
                                 let target = &folder_results[selected].path.clone();
-                                status_msg = format!("{}", super::ui::action_name("delete"));
-                                let _ = execute!(stdout, cursor::MoveTo(0, 0));
                                 let deleted = try_delete(target);
                                 if deleted {
-                                    status_msg = format!("✓ Vanished: {}", PathBuf::from(target).file_name().unwrap_or_default().to_string_lossy());
-                                } else if target.contains("Containers/com.docker") {
-                                    status_msg = "✗ Protected by macOS. Use: docker system prune".to_string();
-                                } else if target.contains("/Library/") {
-                                    status_msg = "✗ System protected. Try: sudo rm -rf <path>".to_string();
+                                    status_msg = format!("\x1b[32m\u{2713}\x1b[0m Deleted: {}", PathBuf::from(target).file_name().unwrap_or_default().to_string_lossy());
+                                    folder_results = scanner::scan_children(&current_path);
+                                    folder_results.sort_by(|a, b| b.size.cmp(&a.size));
+                                    if selected >= folder_results.len() && selected > 0 { selected -= 1; }
                                 } else {
-                                    status_msg = "✗ Permission denied".to_string();
+                                    status_msg = format!("\x1b[33m\u{26a0}\x1b[0m Cannot delete (protected by macOS). Skipped.");
                                 }
-                                folder_results = scanner::scan_children(&current_path);
-                                folder_results.sort_by(|a, b| b.size.cmp(&a.size));
-                                if selected >= folder_results.len() && selected > 0 { selected -= 1; }
                             }
                             confirm_delete = false;
                         }
@@ -376,41 +375,55 @@ pub fn run(path: &str) {
                                 multi_selected.clear();
                                 status_msg.clear();
                             }
-                        } else if mode == "folder" && selected < folder_results.len() && folder_results[selected].is_dir {
-                            current_path = PathBuf::from(&folder_results[selected].path);
-                            folder_results = scanner::scan_children(&current_path);
-                            folder_results.sort_by(|a, b| b.size.cmp(&a.size));
-                            selected = 0;
-                            multi_selected.clear();
-                            status_msg.clear();
-                        }
-                    }
-                    super::ui::NavAction::Back => {
-                        // Esc/Left/Backspace — go back one level
-                        if mode == "folder" {
-                            if let Some(parent) = current_path.parent() {
-                                let parent_buf = parent.to_path_buf();
-                                current_path = parent_buf;
+                        } else if mode == "folder" && selected < folder_results.len() {
+                            if folder_results[selected].is_dir {
+                                current_path = PathBuf::from(&folder_results[selected].path);
                                 folder_results = scanner::scan_children(&current_path);
                                 folder_results.sort_by(|a, b| b.size.cmp(&a.size));
                                 selected = 0;
                                 multi_selected.clear();
+                                status_msg.clear();
+                            } else {
+                                // It's a file — can't enter it
+                                let name = PathBuf::from(&folder_results[selected].path)
+                                    .file_name().unwrap_or_default().to_string_lossy().to_string();
+                                status_msg = format!("\x1b[90m\u{2139} {} is a file (use d to delete)\x1b[0m", name);
                             }
+                        }
+                    }
+                    super::ui::NavAction::Back => {
+                        if mode == "folder" {
                             let is_root = categories.iter().filter(|c| c.size > 0).any(|c| c.path == current_path)
-                                || current_path == dirs::home_dir().unwrap_or_default()
+                                || current_path == crate::error::home_or_exit()
                                 || current_path == PathBuf::from("/");
                             if is_root {
+                                // Already at top level — go back to overview instantly
                                 mode = "overview";
                                 selected = 0;
+                            } else if let Some(parent) = current_path.parent() {
+                                // Check if parent is a root category
+                                let parent_buf = parent.to_path_buf();
+                                let parent_is_root = categories.iter().filter(|c| c.size > 0).any(|c| c.path == parent_buf)
+                                    || parent_buf == crate::error::home_or_exit()
+                                    || parent_buf == PathBuf::from("/");
+                                if parent_is_root {
+                                    mode = "overview";
+                                    selected = 0;
+                                } else {
+                                    current_path = parent_buf;
+                                    folder_results = scanner::scan_children(&current_path);
+                                    folder_results.sort_by(|a, b| b.size.cmp(&a.size));
+                                    selected = 0;
+                                }
                             }
+                            multi_selected.clear();
                         } else {
-                            // In overview — Esc goes back to main menu
                             break;
                         }
                         status_msg.clear();
                     }
                     super::ui::NavAction::Quit => {
-                        // q — always quit back to main menu
+                        // Already handled above — this is a fallback
                         break;
                     }
                     super::ui::NavAction::Delete => {

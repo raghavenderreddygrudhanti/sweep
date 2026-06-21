@@ -1,5 +1,13 @@
 /// Shared UI components for consistent branding across all screens.
 /// All screens should use these for uniform look, navigation, and footers.
+///
+/// COLOR CODE REFERENCE (used consistently across all screens):
+/// - Green  (\x1b[32m) — success, freed space, healthy, deletable items
+/// - Yellow (\x1b[33m) — warning, in-progress, scanning, moderate
+/// - Red    (\x1b[31m) — critical, large usage, growth, errors
+/// - Cyan   (\x1b[36m) — selected/highlighted item
+/// - Gray   (\x1b[90m) — disabled, system/protected, hints, unchanged
+/// - Bold   (\x1b[1m)  — emphasis, totals, sizes
 
 use crossterm::event::{KeyCode, KeyEvent};
 
@@ -31,7 +39,7 @@ pub fn map_key(key: KeyEvent) -> NavAction {
         KeyCode::Down | KeyCode::Char('j') => NavAction::Down,
         KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => NavAction::Select,
         KeyCode::Esc | KeyCode::Backspace => NavAction::Back,
-        KeyCode::Left | KeyCode::Char('h') => NavAction::Back,
+        KeyCode::Left | KeyCode::Char('h') | KeyCode::Char('b') => NavAction::Back,
         KeyCode::Char('q') => NavAction::Quit,
         KeyCode::Char(' ') => NavAction::Toggle,
         KeyCode::Char('d') | KeyCode::Char('D') => NavAction::Delete,
@@ -52,36 +60,34 @@ pub fn footer_sep() -> &'static str {
 
 /// Footer for browse/explorer screens (TUI).
 pub fn footer_browse() -> &'static str {
-    "  \x1b[90m↑↓ nav · →Enter open · ←Esc back · Space select · d del · q quit\x1b[0m\r\n"
+    "  \x1b[90m\u{2191}\u{2193} nav \u{b7} Enter open \u{b7} b back \u{b7} Space select \u{b7} d del \u{b7} q quit\x1b[0m\r\n"
 }
 
 /// Footer showing selected count + actions (TUI).
 pub fn footer_selected(count: usize) -> String {
-    format!("  \x1b[32m{} selected\x1b[0m · \x1b[90mD delete · Space toggle · n clear · Esc back · q quit\x1b[0m\r\n", count)
+    format!("  \x1b[32m{} selected\x1b[0m \u{b7} \x1b[90mD delete \u{b7} Space toggle \u{b7} n clear \u{b7} b back \u{b7} q quit\x1b[0m\r\n", count)
 }
 
 /// Footer for list screens with selection (TUI).
 pub fn footer_list() -> &'static str {
-    "  \x1b[90m↑↓ nav · Space select · Enter confirm · Esc back · q quit\x1b[0m\r\n"
+    "  \x1b[90m\u{2191}\u{2193} nav \u{b7} Space select \u{b7} d delete \u{b7} a all \u{b7} b back \u{b7} q quit\x1b[0m\r\n"
 }
 
 /// Footer for simple view screens (TUI).
 pub fn footer_simple() -> &'static str {
-    "  \x1b[90mEsc/q back\x1b[0m\r\n"
+    "  \x1b[90mb back \u{b7} q quit\x1b[0m\r\n"
 }
 
 /// Footer for non-TUI screens — wait for key to return.
 pub fn wait_any_key() {
-    print!("\n  \x1b[90mPress any key to return...\x1b[0m ");
+    println!("  \x1b[90m\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\x1b[0m");
+    print!("  \x1b[90mPress any key to return...\x1b[0m ");
     let _ = std::io::Write::flush(&mut std::io::stdout());
     let _ = crossterm::terminal::enable_raw_mode();
-    // Wait a bit for key release events to clear
     std::thread::sleep(std::time::Duration::from_millis(200));
-    // Drain all buffered events
     while crossterm::event::poll(std::time::Duration::from_millis(100)).unwrap_or(false) {
         let _ = crossterm::event::read();
     }
-    // Now wait for actual new keypress
     let _ = crossterm::event::read();
     let _ = crossterm::terminal::disable_raw_mode();
     println!();
@@ -156,8 +162,8 @@ fn logo_print() {
 pub fn print_header(subtitle: &str) {
     logo_print();
     println!();
-    println!("  \x1b[90m›\x1b[0m  {}", subtitle);
-    println!("  \x1b[90m─────────────────────────────────────────────\x1b[0m");
+    println!("  \x1b[1m>\x1b[0m  {}", subtitle);
+    println!("  \x1b[90m\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\x1b[0m");
     println!();
 }
 

@@ -2,7 +2,6 @@
 //! Finds and removes: node_modules, target/, .venv, __pycache__, .build, dist
 
 use std::path::PathBuf;
-use dirs;
 
 /// Developer artifact directories to look for.
 pub const DEV_ARTIFACTS: &[&str] = &[
@@ -23,7 +22,7 @@ pub const DEV_ARTIFACTS: &[&str] = &[
 
 /// Default root paths to scan for dev artifacts.
 pub fn scan_roots() -> Vec<PathBuf> {
-    let home = dirs::home_dir().unwrap_or_default();
+    let home = crate::error::home_or_exit();
     vec![
         home.join("lang-chain"),
         home.join("Projects"),

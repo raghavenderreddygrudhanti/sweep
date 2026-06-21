@@ -1,11 +1,10 @@
 //! Trash management — empty trash, show trash size.
 
 use std::path::PathBuf;
-use dirs;
 
 /// Get trash directory path.
 pub fn trash_path() -> PathBuf {
-    let home = dirs::home_dir().unwrap_or_default();
+    let home = crate::error::home_or_exit();
 
     #[cfg(target_os = "macos")]
     {
