@@ -104,52 +104,45 @@ pub fn run(path: &str, min_size: u64) {
         return;
     }
 
-    // Phase 2: Parallel hashing with progress
+    // Phase 2: Parallel hashing ALL candidates at once (max parallelism)
     let total_to_hash = candidate_count as u64;
     let checked = AtomicU64::new(0);
-    let mut dupe_groups: Vec<DupeGroup> = Vec::new();
 
-    // Show progress in a separate thread while hashing happens
-    let checked_ref = &checked;
+    // Flatten all candidates into one list for maximum parallel throughput
+    let all_files: Vec<(u64, PathBuf)> = candidates.iter()
+        .flat_map(|(size, paths)| paths.iter().map(move |p| (*size, p.clone())))
+        .collect();
 
-    for (size, paths) in &candidates {
-        // Hash all files in this size group in parallel
-        let hashes: Vec<(u64, PathBuf)> = paths.par_iter()
-            .filter_map(|path| {
-                let done = checked_ref.fetch_add(1, Ordering::Relaxed) + 1;
-                if done % 50 == 0 || done == total_to_hash {
-                    let pct = (done as f64 / total_to_hash as f64 * 100.0) as u64;
-                    let bar_width = 20;
-                    let filled = (pct as usize * bar_width) / 100;
-                    let empty = bar_width - filled;
-                    // Progress bar (written from multiple threads, may flicker slightly)
-                    eprint!("\r\x1b[K  \x1b[33m\u{2022}\x1b[0m Phase 2: \x1b[32m{}\x1b[90m{}\x1b[0m {}/{} ({}%)",
-                        "\u{2501}".repeat(filled),
-                        "\u{2508}".repeat(empty),
-                        done, total_to_hash, pct);
-                }
-                hash_file_partial(path).ok().map(|h| (h, path.clone()))
-            })
-            .collect();
-
-        // Group by hash
-        let mut hash_map: HashMap<u64, Vec<PathBuf>> = HashMap::new();
-        for (hash, path) in hashes {
-            hash_map.entry(hash).or_default().push(path);
-        }
-
-        for (_, group_paths) in hash_map {
-            if group_paths.len() >= 2 {
-                dupe_groups.push(DupeGroup {
-                    size: *size,
-                    paths: group_paths,
-                });
+    // Hash all in parallel across all cores
+    let hashed: Vec<(u64, u64, PathBuf)> = all_files.par_iter()
+        .filter_map(|(size, path)| {
+            let done = checked.fetch_add(1, Ordering::Relaxed) + 1;
+            if done % 20 == 0 || done == total_to_hash {
+                let pct = (done as f64 / total_to_hash as f64 * 100.0) as u64;
+                let bar_w = 20usize;
+                let filled = (pct as usize * bar_w) / 100;
+                let empty = bar_w - filled;
+                eprint!("\r\x1b[K  \x1b[33m\u{2022}\x1b[0m Hashing: \x1b[32m{}\x1b[90m{}\x1b[0m {}/{} ({}%)",
+                    "\u{2501}".repeat(filled), "\u{2508}".repeat(empty),
+                    done, total_to_hash, pct);
             }
-        }
-    }
+            hash_file_partial(path).ok().map(|h| (*size, h, path.clone()))
+        })
+        .collect();
 
     eprint!("\r\x1b[K");
     println!("  \x1b[32m\u{2713}\x1b[0m Hashed {} files\n", checked.load(Ordering::Relaxed));
+
+    // Group by (size, hash) to find duplicates
+    let mut groups: HashMap<(u64, u64), Vec<PathBuf>> = HashMap::new();
+    for (size, hash, path) in hashed {
+        groups.entry((size, hash)).or_default().push(path);
+    }
+
+    let mut dupe_groups: Vec<DupeGroup> = groups.into_iter()
+        .filter(|(_, paths)| paths.len() >= 2)
+        .map(|((size, _), paths)| DupeGroup { size, paths })
+        .collect();
 
     if dupe_groups.is_empty() {
         println!("  \x1b[32m\u{2713}\x1b[0m No duplicates found!\n");
