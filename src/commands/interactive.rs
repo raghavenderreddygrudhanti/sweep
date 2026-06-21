@@ -7,6 +7,7 @@ const MENU: &[(&str, &str, &str)] = &[
     // (label, description, color)
     ("Clean",     "Free up disk space (all categories)","\x1b[32m"),
     ("Uninstall", "Remove apps and leftover files",     "\x1b[33m"),
+    ("Dupes",     "Find duplicate files wasting space", "\x1b[35m"),
     ("Analyze",   "Explore disk usage",                 "\x1b[34m"),
     ("Optimize",  "Refresh system caches & services",   "\x1b[32m"),
     ("Recommend", "Smart space recovery suggestions",   "\x1b[33m"),
@@ -87,6 +88,7 @@ pub fn run() {
                     super::ui::NavAction::Char('5') => { selected = 4; }
                     super::ui::NavAction::Char('6') => { selected = 5; }
                     super::ui::NavAction::Char('7') => { selected = 6; }
+                    super::ui::NavAction::Char('8') => { selected = 7; }
                     super::ui::NavAction::Back | super::ui::NavAction::Quit => {
                         break;
                     }
@@ -114,11 +116,12 @@ fn run_selected(idx: usize) {
     match idx {
         0 => super::clean::run(false, DeleteMode::Trash),
         1 => super::uninstall::run(false, DeleteMode::Trash),
-        2 => super::scan::run("~"),
-        3 => super::optimize::run(false),
-        4 => super::recommend::run(),
-        5 => super::timeline::run(),
-        6 => super::status::run(),
+        2 => super::dupes::run("~", 1024 * 1024),
+        3 => super::scan::run("~"),
+        4 => super::optimize::run(false),
+        5 => super::recommend::run(),
+        6 => super::timeline::run(),
+        7 => super::status::run(),
         _ => {}
     }
 }
