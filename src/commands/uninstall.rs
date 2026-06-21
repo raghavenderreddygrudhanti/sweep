@@ -32,6 +32,11 @@ pub fn run(dry_run: bool, _mode: DeleteMode) {
     let max_display = 18;
     let mut first_frame = true;
 
+    // Pre-cache remnant counts (expensive to compute per frame)
+    let mut remnant_counts: Vec<usize> = apps_list.iter()
+        .map(|app| apps::find_app_remnants(app).len())
+        .collect();
+
     loop {
         if first_frame {
             let _ = execute!(stdout, cursor::MoveTo(0, 0), terminal::Clear(terminal::ClearType::All));
@@ -63,29 +68,29 @@ pub fn run(dry_run: bool, _mode: DeleteMode) {
             let is_system = app.path.metadata()
                 .map(|m| {
                     use std::os::unix::fs::MetadataExt;
-                    m.uid() == 0 // owned by root
+                    m.uid() == 0
                 })
                 .unwrap_or(false);
 
             let ptr = if i == selected { " \x1b[32m\u{25b6}\x1b[0m" } else { "  " };
             let chk = if marked[i] { "\x1b[32m\u{25cf}\x1b[0m" }
-                else if is_system { "\x1b[90m\u{25cb}\x1b[0m" }  // gray circle for system
-                else { "\x1b[37m\u{25cb}\x1b[0m" };              // white circle for user
+                else if is_system { "\x1b[90m\u{25cb}\x1b[0m" }
+                else { "\x1b[37m\u{25cb}\x1b[0m" };
 
             let size_str = ByteSize::b(app.size).to_string();
             let size_colored = if is_system {
-                format!("\x1b[90m{}\x1b[0m", size_str)  // gray for system
+                format!("\x1b[90m{}\x1b[0m", size_str)
             } else if app.size > 2_000_000_000 {
-                format!("\x1b[31m{}\x1b[0m", size_str)  // red for >2GB
+                format!("\x1b[31m{}\x1b[0m", size_str)
             } else if app.size > 500_000_000 {
-                format!("\x1b[33m{}\x1b[0m", size_str)  // yellow for >500MB
+                format!("\x1b[33m{}\x1b[0m", size_str)
             } else {
-                format!("\x1b[32m{}\x1b[0m", size_str)  // green for small
+                format!("\x1b[32m{}\x1b[0m", size_str)
             };
 
-            let remnants = apps::find_app_remnants(app);
-            let extra = if !remnants.is_empty() {
-                format!(" \x1b[90m+{} remnants\x1b[0m", remnants.len())
+            let rc = remnant_counts.get(i).copied().unwrap_or(0);
+            let extra = if rc > 0 {
+                format!(" \x1b[90m+{} remnants\x1b[0m", rc)
             } else { "".into() };
 
             let name = if i == selected {
@@ -197,6 +202,9 @@ pub fn run(dry_run: bool, _mode: DeleteMode) {
                         // Refresh list after deletion
                         apps_list = apps::find_installed_apps();
                         marked = vec![false; apps_list.len()];
+                        remnant_counts = apps_list.iter()
+                            .map(|app| apps::find_app_remnants(app).len())
+                            .collect();
                         selected = 0;
                     } else if selected < apps_list.len() {
                         // Single app — confirm in TUI
@@ -265,6 +273,9 @@ pub fn run(dry_run: bool, _mode: DeleteMode) {
                         // Refresh list after deletion
                         apps_list = apps::find_installed_apps();
                         marked = vec![false; apps_list.len()];
+                        remnant_counts = apps_list.iter()
+                            .map(|app| apps::find_app_remnants(app).len())
+                            .collect();
                         if selected >= apps_list.len() && selected > 0 { selected -= 1; }
                     }
                 }
