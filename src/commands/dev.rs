@@ -126,6 +126,16 @@ pub fn run(dry_run: bool, older_than_days: u64, _mode: DeleteMode) {
                         }
                         println!("\n  🎉 Freed: {}\n", ByteSize::b(freed).to_string().bold().green());
                     }
+
+                    // Pause so user can see results
+                    println!("  \x1b[90mPress any key to continue...\x1b[0m");
+                    let _ = terminal::enable_raw_mode();
+                    std::thread::sleep(std::time::Duration::from_millis(300));
+                    while event::poll(std::time::Duration::from_millis(100)).unwrap_or(false) {
+                        let _ = event::read();
+                    }
+                    let _ = event::read();
+                    let _ = terminal::disable_raw_mode();
                     return;
                 }
                 KeyCode::Char('q') | KeyCode::Esc => {

@@ -120,4 +120,13 @@ pub fn run(dry_run: bool, mode: DeleteMode) {
 
     println!("  \x1b[1;32m\u{1f389} Done! Freed: {}\x1b[0m\n", ByteSize::b(freed).to_string().bold());
 
+    // Pause so user can see results
+    println!("  \x1b[90mPress any key to continue...\x1b[0m");
+    let _ = crossterm::terminal::enable_raw_mode();
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    while crossterm::event::poll(std::time::Duration::from_millis(100)).unwrap_or(false) {
+        let _ = crossterm::event::read();
+    }
+    let _ = crossterm::event::read();
+    let _ = crossterm::terminal::disable_raw_mode();
 }
