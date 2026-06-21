@@ -130,9 +130,11 @@ fn pick_min_size() -> u64 {
     let choice = loop {
         if let Ok(crossterm::event::Event::Key(key)) = crossterm::event::read() {
             match key.code {
-                crossterm::event::KeyCode::Char(c) if c >= '1' && c <= '5' => {
-                    break (c as usize) - ('1' as usize);
-                }
+                crossterm::event::KeyCode::Char('1') => break 0,
+                crossterm::event::KeyCode::Char('2') => break 1,
+                crossterm::event::KeyCode::Char('3') => break 2,
+                crossterm::event::KeyCode::Char('4') => break 3,
+                crossterm::event::KeyCode::Char('5') => break 4,
                 crossterm::event::KeyCode::Enter => break 1, // default: 500KB
                 crossterm::event::KeyCode::Esc | crossterm::event::KeyCode::Char('q') => break 1,
                 _ => continue,
