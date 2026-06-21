@@ -9,44 +9,42 @@ pub fn run(dry_run: bool, mode: DeleteMode) {
     let dry_label = if dry_run { " (preview)" } else { "" };
     super::ui::print_header(&format!("\x1b[1;35m\u{1f916} AI/ML Cache Clean\x1b[0m{}", dry_label));
 
-    print!("  \x1b[90m\u{23f3} Scanning AI/ML caches...\x1b[0m");
-    let _ = io::stdout().flush();
-
     let caches = ai::ai_cache_paths();
     let mut found: Vec<(&std::path::Path, &str, u64)> = Vec::new();
 
+    // Progressive scan with tick marks
     for (path, desc) in &caches {
+        if !path.exists() { continue; }
+
+        print!("  \x1b[33m\u{2022}\x1b[0m Checking {}...\r", desc);
+        let _ = io::stdout().flush();
+
         let size = scanner::scan_size_native(path);
+        print!("\r\x1b[K");
+
         if size > 1_000_000 {
+            let bar_len = ((size as f64 / 30_000_000_000.0) * 15.0).min(15.0) as usize;
+            let bar = "\u{2588}".repeat(bar_len);
+            let empty = "\u{2591}".repeat(15usize.saturating_sub(bar_len));
+            println!("  \x1b[32m\u{2713}\x1b[0m \x1b[31m{}{}\x1b[0m {:>9}  {}",
+                bar, empty, ByteSize::b(size).to_string().bold(), desc.cyan());
+            println!("    \x1b[90m{}\x1b[0m", path.display());
             found.push((path.as_path(), desc, size));
         }
     }
 
-    // Clear spinner
-    print!("\r\x1b[K");
-    let _ = io::stdout().flush();
-
     if found.is_empty() {
-        println!("  \u{2728} No significant AI/ML caches found.\n");
+        println!("\n  \x1b[32m\u{2713}\x1b[0m No significant AI/ML caches found.\n");
         super::ui::wait_any_key();
         return;
     }
 
-    let mut total: u64 = 0;
-    for (path, desc, size) in &found {
-        let bar_len = ((*size as f64 / 30_000_000_000.0) * 15.0).min(15.0) as usize;
-        let bar = "\u{2588}".repeat(bar_len);
-        let empty = "\u{2591}".repeat(15usize.saturating_sub(bar_len));
-        println!("  \u{2713} \x1b[31m{}{}\x1b[0m {:>9}  {}",
-            bar, empty, ByteSize::b(*size).to_string().bold(), desc.cyan());
-        println!("    \x1b[90m{}\x1b[0m", path.display());
-        total += size;
-    }
+    let total: u64 = found.iter().map(|(_, _, s)| s).sum();
 
-    println!("\n  {}", "\u{2500}".repeat(40).dimmed());
+    println!("\n  \x1b[90m\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\x1b[0m");
+    println!("  Total: {}", ByteSize::b(total).to_string().bold().green());
 
     if dry_run {
-        println!("  \u{1f4be} Would free: {}", ByteSize::b(total).to_string().bold().green());
         println!("  \x1b[90mRun without --dry-run to actually clean.\x1b[0m\n");
         super::ui::wait_any_key();
         return;

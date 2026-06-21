@@ -27,7 +27,7 @@ pub fn run() {
     // Re-scan the paths we have cached
     if !output::is_json() {
         super::ui::print_header("\x1b[1;34m\u{1f4c8} Space Timeline\x1b[0m");
-        print!("  \x1b[33m[scanning...]\x1b[0m");
+        print!("  \x1b[33m\u{2022}\x1b[0m Scanning home directory...\r");
         let _ = std::io::Write::flush(&mut std::io::stdout());
     }
 
@@ -35,8 +35,8 @@ pub fn run() {
     let current_children = scanner::scan_children(&home);
 
     if !output::is_json() {
-        print!("\r\x1b[K"); // Clear scanning line
-        println!();
+        print!("\r\x1b[K");
+        println!("  \x1b[32m\u{2713}\x1b[0m Scan complete ({} directories)\n", current_children.len());
     }
 
     let mut changes: Vec<TimelineEntry> = Vec::new();
@@ -94,20 +94,19 @@ pub fn run() {
 
     for entry in &changes {
         let size_str = bytesize::ByteSize::b(entry.delta.unsigned_abs()).to_string();
-        let arrow = match entry.direction.as_str() {
-            "grew" => format!("{}", format!("+{}", size_str).red()),
-            "shrank" => format!("{}", format!("-{}", size_str).green()),
-            "new" => format!("{}", format!("+{} (new)", size_str).yellow()),
-            _ => size_str,
+        let (icon, arrow) = match entry.direction.as_str() {
+            "grew" => ("\x1b[31m\u{25b2}\x1b[0m", format!("{}", format!("+{}", size_str).red())),
+            "shrank" => ("\x1b[32m\u{25bc}\x1b[0m", format!("{}", format!("-{}", size_str).green())),
+            "new" => ("\x1b[33m\u{2605}\x1b[0m", format!("{}", format!("+{}", size_str).yellow())),
+            _ => (" ", size_str),
         };
 
-        // Shorten path for display
         let display_path = entry.path.replace(
             &dirs::home_dir().unwrap_or_default().display().to_string(),
             "~",
         );
 
-        println!("  {:>12}  {}", arrow, display_path);
+        println!("  {} {:>12}  {}", icon, arrow, display_path);
     }
 
     println!();
