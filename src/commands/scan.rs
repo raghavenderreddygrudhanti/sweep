@@ -9,24 +9,24 @@ use crossterm::event::Event;
 use std::io::{self, Write};
 use crate::{scanner, cache};
 
-/// Try to delete a file/folder. Uses direct rm (no Finder GUI popups).
-/// For user safety, moves to ~/.Trash when possible, falls back to sudo via macOS auth dialog.
+/// Try to delete a file/folder. Uses direct rm (no GUI popups).
+/// Moves to ~/.Trash first (recoverable), falls back to rm -rf.
+/// Never prompts for password — silently fails if no permission.
 fn try_delete(path: &str) -> bool {
     let p = PathBuf::from(path);
     if !p.exists() { return true; }
 
     let size = if p.is_dir() {
-        crate::scanner::scan_size(&p).0
+        crate::scanner::scan_size_native(&p)
     } else {
         p.metadata().map(|m| m.len()).unwrap_or(0)
     };
 
-    // Strategy 1: Move to ~/.Trash (recoverable, no GUI popup)
+    // Strategy 1: Move to ~/.Trash (recoverable, no popup)
     let trash_dir = dirs::home_dir().unwrap_or_default().join(".Trash");
     let file_name = p.file_name().unwrap_or_default().to_string_lossy().to_string();
     let mut trash_dest = trash_dir.join(&file_name);
 
-    // Handle name collision in Trash
     if trash_dest.exists() {
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -35,55 +35,43 @@ fn try_delete(path: &str) -> bool {
         trash_dest = trash_dir.join(format!("{}_{}", file_name, timestamp));
     }
 
-    // Try mv to Trash
     let mv_result = std::process::Command::new("mv")
         .arg(path)
         .arg(&trash_dest)
-        .output();
+        .stderr(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .status();
 
-    if let Ok(output) = mv_result {
-        if output.status.success() && !p.exists() {
+    if let Ok(s) = mv_result {
+        if s.success() && !p.exists() {
             crate::history::log_delete(path, size, "trash");
             return true;
         }
     }
 
-    // Strategy 2: Direct rm -rf (works for most owned files)
+    // Strategy 2: Direct rm -rf (works for owned files)
     let rm_result = if p.is_dir() {
         std::process::Command::new("rm")
             .args(["-rf", path])
-            .output()
+            .stderr(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .status()
     } else {
         std::process::Command::new("rm")
             .args(["-f", path])
-            .output()
+            .stderr(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .status()
     };
 
-    if let Ok(output) = rm_result {
-        if output.status.success() && !p.exists() {
+    if let Ok(s) = rm_result {
+        if s.success() && !p.exists() {
             crate::history::log_delete(path, size, "delete");
             return true;
         }
     }
 
-    // Strategy 3: Use macOS auth dialog (like Mole does) — prompts for password
-    let script = if p.is_dir() {
-        format!("do shell script \"rm -rf '{}'\" with administrator privileges", path.replace('\'', "'\\''"))
-    } else {
-        format!("do shell script \"rm -f '{}'\" with administrator privileges", path.replace('\'', "'\\''"))
-    };
-
-    let auth_result = std::process::Command::new("osascript")
-        .args(["-e", &script])
-        .output();
-
-    if let Ok(output) = auth_result {
-        if output.status.success() && !p.exists() {
-            crate::history::log_delete(path, size, "sudo-delete");
-            return true;
-        }
-    }
-
+    // No admin password prompt — just fail silently
     false
 }
 
@@ -386,7 +374,6 @@ pub fn run(path: &str) {
                         }
                     }
                     super::ui::NavAction::Back => {
-                        // Esc/Left/Backspace — go back one level
                         if mode == "folder" {
                             if let Some(parent) = current_path.parent() {
                                 let parent_buf = parent.to_path_buf();
