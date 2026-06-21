@@ -223,19 +223,25 @@ pub fn run(dry_run: bool, mode: DeleteMode) {
     let _ = terminal::disable_raw_mode();
 }
 
-/// Scan a path, display its size, and add to targets if non-empty.
+/// Scan a path, display its size progressively, and add to targets if non-empty.
 fn scan_and_show(targets: &mut Vec<CleanTarget>, total: &mut u64, name: &str, path: &PathBuf) {
     if !path.exists() {
         return;
     }
 
+    // Show spinner while scanning
+    print!("    \x1b[33m\u{2022}\x1b[0m {}...\r", name);
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+
     let size = scanner::scan_size_native(path);
+    print!("\r\x1b[K");
+
     if size < 1000 {
         return;
     }
 
     let count = std::fs::read_dir(path).map(|d| d.count()).unwrap_or(0);
-    println!("    \u{2713} {} {} items, \x1b[32m{}\x1b[0m", name, count, ByteSize::b(size));
+    println!("    \x1b[32m\u{2713}\x1b[0m {} {} items, \x1b[32m{}\x1b[0m", name, count, ByteSize::b(size));
 
     targets.push(CleanTarget {
         name: name.to_string(),

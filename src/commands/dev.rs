@@ -15,7 +15,7 @@ pub fn run(dry_run: bool, older_than_days: u64, _mode: DeleteMode) {
 
     let mode = if dry_run { "(preview)" } else { "" };
     super::ui::print_header(&format!("\x1b[1;36m\u{26a1} Dev Artifacts\x1b[0m {} \u{2014} older than {}d", mode, older_than_days));
-    print!("  ⏳ Scanning...");
+    print!("  \x1b[33m\u{2022}\x1b[0m Scanning...");
     let _ = io::stdout().flush();
 
     let start = Instant::now();
@@ -26,7 +26,11 @@ pub fn run(dry_run: bool, older_than_days: u64, _mode: DeleteMode) {
         .checked_sub(Duration::from_secs(older_than_days * 86400))
         .unwrap_or(SystemTime::UNIX_EPOCH);
 
-    for name in dev_cleaner::DEV_ARTIFACTS {
+    for (i, name) in dev_cleaner::DEV_ARTIFACTS.iter().enumerate() {
+        print!("\r\x1b[K  \x1b[33m{}\x1b[0m Scanning for {}...",
+            super::ui::spinner(i), name);
+        let _ = io::stdout().flush();
+
         for root in &roots {
             let matches = scanner::find_dirs_by_name(root, name, 4);
             for m in matches {
@@ -44,7 +48,8 @@ pub fn run(dry_run: bool, older_than_days: u64, _mode: DeleteMode) {
 
     found.sort_by(|a, b| b.1.cmp(&a.1));
     let elapsed = start.elapsed().as_secs_f64();
-    println!(" found {} items in {:.1}s", found.len(), elapsed);
+    print!("\r\x1b[K");
+    println!("  \x1b[32m\u{2713}\x1b[0m Found {} items in {:.1}s", found.len(), elapsed);
 
     if found.is_empty() {
         println!("\n  \x1b[32m\u{2713}\x1b[0m No old build artifacts found.\n");
