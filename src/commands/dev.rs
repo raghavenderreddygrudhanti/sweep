@@ -54,6 +54,12 @@ pub fn run(dry_run: bool, older_than_days: u64, _mode: DeleteMode) {
 
     let mut selected: usize = 0;
 
+    // Drain any stray Enter from menu
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    while event::poll(std::time::Duration::from_millis(100)).unwrap_or(false) {
+        let _ = event::read();
+    }
+
     loop {
         let _ = execute!(stdout, cursor::MoveTo(0, 0), terminal::Clear(terminal::ClearType::All));
 

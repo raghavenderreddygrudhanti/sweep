@@ -56,15 +56,19 @@ pub fn run(dry_run: bool, mode: DeleteMode) {
     let _ = io::stdout().flush();
 
     let _ = crossterm::terminal::enable_raw_mode();
-    // Drain buffered input
-    while crossterm::event::poll(std::time::Duration::from_millis(50)).unwrap_or(false) {
+    // Drain buffered input (longer delay to catch menu Enter)
+    std::thread::sleep(std::time::Duration::from_millis(400));
+    while crossterm::event::poll(std::time::Duration::from_millis(150)).unwrap_or(false) {
         let _ = crossterm::event::read();
     }
     let proceed = loop {
         if let Ok(crossterm::event::Event::Key(key)) = crossterm::event::read() {
             match key.code {
                 crossterm::event::KeyCode::Char('y') | crossterm::event::KeyCode::Char('Y') => break true,
-                _ => break false,
+                crossterm::event::KeyCode::Char('n') | crossterm::event::KeyCode::Char('N')
+                | crossterm::event::KeyCode::Char('q') | crossterm::event::KeyCode::Char('Q')
+                | crossterm::event::KeyCode::Esc => break false,
+                _ => continue, // Ignore Enter and other keys
             }
         }
     };
