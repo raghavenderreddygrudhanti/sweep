@@ -72,16 +72,14 @@ pub fn footer_simple() -> &'static str {
 
 /// Footer for non-TUI screens — wait for key to return.
 pub fn wait_any_key() {
-    print!("\n  \x1b[90mPress any key to return...\x1b[0m ");
+    println!("  \x1b[90m\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\x1b[0m");
+    print!("  \x1b[90mPress any key to return...\x1b[0m ");
     let _ = std::io::Write::flush(&mut std::io::stdout());
     let _ = crossterm::terminal::enable_raw_mode();
-    // Wait a bit for key release events to clear
     std::thread::sleep(std::time::Duration::from_millis(200));
-    // Drain all buffered events
     while crossterm::event::poll(std::time::Duration::from_millis(100)).unwrap_or(false) {
         let _ = crossterm::event::read();
     }
-    // Now wait for actual new keypress
     let _ = crossterm::event::read();
     let _ = crossterm::terminal::disable_raw_mode();
     println!();
@@ -156,8 +154,8 @@ fn logo_print() {
 pub fn print_header(subtitle: &str) {
     logo_print();
     println!();
-    println!("  \x1b[90m›\x1b[0m  {}", subtitle);
-    println!("  \x1b[90m─────────────────────────────────────────────\x1b[0m");
+    println!("  \x1b[1m>\x1b[0m  {}", subtitle);
+    println!("  \x1b[90m\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\x1b[0m");
     println!();
 }
 

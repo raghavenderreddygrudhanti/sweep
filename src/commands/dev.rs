@@ -10,7 +10,7 @@ use crate::cleaners::DeleteMode;
 
 pub fn run(dry_run: bool, older_than_days: u64, _mode: DeleteMode) {
     let mode = if dry_run { "(preview)" } else { "" };
-    super::ui::print_header(&format!("\x1b[1;35m⚡ Dev Artifacts\x1b[0m {} — older than {}d", mode, older_than_days));
+    super::ui::print_header(&format!("\x1b[1;36m\u{26a1} Dev Artifacts\x1b[0m {} \u{2014} older than {}d", mode, older_than_days));
     print!("  ⏳ Scanning...");
     let _ = io::stdout().flush();
 

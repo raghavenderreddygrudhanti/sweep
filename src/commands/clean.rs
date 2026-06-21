@@ -15,7 +15,7 @@ struct CleanTarget {
 }
 
 pub fn run(dry_run: bool, mode: DeleteMode) {
-    super::ui::print_header("\x1b[1;35mClean Your Mac\x1b[0m");
+    super::ui::print_header("\x1b[1;35m\u{1f9f9} Clean\x1b[0m");
 
     let home = dirs::home_dir().unwrap_or_default();
 
