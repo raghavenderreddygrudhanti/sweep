@@ -391,7 +391,7 @@ pub fn run(path: &str) {
                             }
                         }
                     }
-                    super::ui::NavAction::Back | super::ui::NavAction::Char('b') => {
+                    super::ui::NavAction::Back => {
                         if mode == "folder" {
                             if let Some(parent) = current_path.parent() {
                                 let parent_buf = parent.to_path_buf();

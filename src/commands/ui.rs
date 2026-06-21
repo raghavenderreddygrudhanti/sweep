@@ -31,7 +31,7 @@ pub fn map_key(key: KeyEvent) -> NavAction {
         KeyCode::Down | KeyCode::Char('j') => NavAction::Down,
         KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => NavAction::Select,
         KeyCode::Esc | KeyCode::Backspace => NavAction::Back,
-        KeyCode::Left | KeyCode::Char('h') => NavAction::Back,
+        KeyCode::Left | KeyCode::Char('h') | KeyCode::Char('b') => NavAction::Back,
         KeyCode::Char('q') => NavAction::Quit,
         KeyCode::Char(' ') => NavAction::Toggle,
         KeyCode::Char('d') | KeyCode::Char('D') => NavAction::Delete,
@@ -57,17 +57,17 @@ pub fn footer_browse() -> &'static str {
 
 /// Footer showing selected count + actions (TUI).
 pub fn footer_selected(count: usize) -> String {
-    format!("  \x1b[32m{} selected\x1b[0m · \x1b[90mD delete · Space toggle · n clear · Esc back · q quit\x1b[0m\r\n", count)
+    format!("  \x1b[32m{} selected\x1b[0m \u{b7} \x1b[90mD delete \u{b7} Space toggle \u{b7} n clear \u{b7} b back \u{b7} q quit\x1b[0m\r\n", count)
 }
 
 /// Footer for list screens with selection (TUI).
 pub fn footer_list() -> &'static str {
-    "  \x1b[90m↑↓ nav · Space select · Enter confirm · Esc back · q quit\x1b[0m\r\n"
+    "  \x1b[90m\u{2191}\u{2193} nav \u{b7} Space select \u{b7} Enter confirm \u{b7} b back \u{b7} q quit\x1b[0m\r\n"
 }
 
 /// Footer for simple view screens (TUI).
 pub fn footer_simple() -> &'static str {
-    "  \x1b[90mEsc/q back\x1b[0m\r\n"
+    "  \x1b[90mb back \u{b7} q quit\x1b[0m\r\n"
 }
 
 /// Footer for non-TUI screens — wait for key to return.
