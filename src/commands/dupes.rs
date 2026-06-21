@@ -123,8 +123,8 @@ fn pick_min_size() -> u64 {
     let _ = std::io::Write::flush(&mut std::io::stdout());
 
     let _ = crossterm::terminal::enable_raw_mode();
-    std::thread::sleep(std::time::Duration::from_millis(300));
-    while crossterm::event::poll(std::time::Duration::from_millis(150)).unwrap_or(false) {
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    while crossterm::event::poll(std::time::Duration::from_millis(200)).unwrap_or(false) {
         let _ = crossterm::event::read();
     }
     let choice = loop {
@@ -142,6 +142,7 @@ fn pick_min_size() -> u64 {
         }
     };
     let _ = crossterm::terminal::disable_raw_mode();
+    println!(" \x1b[32m{}\x1b[0m", sizes[choice].0);
     println!();
 
     sizes[choice].1
