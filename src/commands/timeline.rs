@@ -24,30 +24,50 @@ pub fn run() {
         return;
     }
 
-    // Only rescan paths we previously cached (much faster than full home scan)
+    // Only rescan large cached paths in parallel (skip tiny ones for speed)
     if !output::is_json() {
         super::ui::print_header("\x1b[1;34m\u{1f4c8} Space Timeline\x1b[0m");
-        print!("  \x1b[33m\u{2022}\x1b[0m Comparing {} cached paths...\r", cached.len());
+    }
+
+    // Filter: only rescan paths > 100 MB previously (skip tiny files/dirs)
+    let paths_to_scan: Vec<(String, u64)> = cached.iter()
+        .filter(|(path_str, &size)| {
+            size > 100 * 1024 * 1024  // Only dirs that were > 100 MB
+            && std::path::Path::new(path_str.as_str()).exists()
+            && !path_str.contains(".profile")  // Skip files
+            && !path_str.contains(".zprofile")
+        })
+        .map(|(k, &v)| (k.clone(), v))
+        .collect();
+
+    if !output::is_json() {
+        print!("  \x1b[33m\u{2022}\x1b[0m Comparing {} directories...\r", paths_to_scan.len());
         let _ = std::io::Write::flush(&mut std::io::stdout());
     }
+
+    // Parallel rescan using rayon
+    use rayon::prelude::*;
+    let scan_results: Vec<(String, u64, u64)> = paths_to_scan.par_iter()
+        .map(|(path_str, prev_size)| {
+            let path = std::path::Path::new(path_str.as_str());
+            let current_size = scanner::scan_size_native(path);
+            (path_str.clone(), *prev_size, current_size)
+        })
+        .collect();
 
     let mut changes: Vec<TimelineEntry> = Vec::new();
     let mut total_growth: i64 = 0;
 
-    for (path_str, &prev_size) in &cached {
-        let path = std::path::Path::new(path_str);
-        if !path.exists() { continue; }
-
-        let current_size = scanner::scan_size_native(path);
-        let delta = current_size as i64 - prev_size as i64;
+    for (path_str, prev_size, current_size) in &scan_results {
+        let delta = *current_size as i64 - *prev_size as i64;
         let abs_delta = delta.unsigned_abs();
 
         if abs_delta > 50 * 1024 * 1024 {
             let direction = if delta > 0 { "grew" } else { "shrank" };
             changes.push(TimelineEntry {
                 path: path_str.clone(),
-                previous_size: prev_size,
-                current_size,
+                previous_size: *prev_size,
+                current_size: *current_size,
                 delta,
                 direction: direction.to_string(),
             });
@@ -57,7 +77,7 @@ pub fn run() {
 
     if !output::is_json() {
         print!("\r\x1b[K");
-        println!("  \x1b[32m\u{2713}\x1b[0m Compared {} paths\n", cached.len());
+        println!("  \x1b[32m\u{2713}\x1b[0m Done ({} directories compared)\n", paths_to_scan.len());
     }
 
     // Sort by absolute delta descending
