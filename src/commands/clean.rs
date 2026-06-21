@@ -15,7 +15,7 @@ struct CleanTarget {
 }
 
 pub fn run(dry_run: bool, mode: DeleteMode) {
-    super::ui::print_header("\x1b[1;35m\u{1f9f9} Clean\x1b[0m");
+    super::ui::print_header("\x1b[1;35m\u{1f9f9} clean\x1b[0m");
 
     let home = crate::error::home_or_exit();
 
@@ -168,15 +168,17 @@ pub fn run(dry_run: bool, mode: DeleteMode) {
     let _ = io::stdout().flush();
 
     let _ = terminal::enable_raw_mode();
-    std::thread::sleep(std::time::Duration::from_millis(150));
-    while event::poll(std::time::Duration::from_millis(50)).unwrap_or(false) {
+    // Longer drain to clear any buffered keys from menu navigation
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    while event::poll(std::time::Duration::from_millis(100)).unwrap_or(false) {
         let _ = event::read();
     }
     let proceed = loop {
         if let Ok(Event::Key(key)) = event::read() {
             match key.code {
                 KeyCode::Char('y') | KeyCode::Char('Y') => break true,
-                _ => break false,
+                KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => break false,
+                _ => continue, // Ignore other keys, wait for y/n
             }
         }
     };
