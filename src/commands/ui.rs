@@ -70,7 +70,7 @@ pub fn footer_selected(count: usize) -> String {
 
 /// Footer for list screens with selection (TUI).
 pub fn footer_list() -> &'static str {
-    "  \x1b[90m\u{2191}\u{2193} nav \u{b7} Space select \u{b7} Enter confirm \u{b7} b back \u{b7} q quit\x1b[0m\r\n"
+    "  \x1b[90m\u{2191}\u{2193} nav \u{b7} Space select \u{b7} d delete \u{b7} a all \u{b7} b back \u{b7} q quit\x1b[0m\r\n"
 }
 
 /// Footer for simple view screens (TUI).

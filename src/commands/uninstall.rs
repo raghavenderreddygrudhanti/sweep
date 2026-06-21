@@ -30,9 +30,15 @@ pub fn run(dry_run: bool, _mode: DeleteMode) {
     let mut selected: usize = 0;
     let mut marked: Vec<bool> = vec![false; apps_list.len()];
     let max_display = 18;
+    let mut first_frame = true;
 
     loop {
-        let _ = execute!(stdout, cursor::MoveTo(0, 0));
+        if first_frame {
+            let _ = execute!(stdout, cursor::MoveTo(0, 0), terminal::Clear(terminal::ClearType::All));
+            first_frame = false;
+        } else {
+            let _ = execute!(stdout, cursor::MoveTo(0, 0));
+        }
 
         let marked_count = marked.iter().filter(|&&m| m).count();
         let marked_size: u64 = apps_list.iter().enumerate()
