@@ -1,19 +1,37 @@
 //! Duplicate file finder — finds files with identical content.
-//! Algorithm: group by size → hash first 64KB → full hash on matches.
-//! Fast and accurate with zero false positives.
+//! Algorithm: group by size → parallel hash first+last 64KB → find matches.
+//! Uses rayon for parallel hashing across all CPU cores.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::io::{self, Read, Write};
 use std::fs::File;
+use std::sync::atomic::{AtomicU64, Ordering};
 use bytesize::ByteSize;
 use colored::*;
 use walkdir::WalkDir;
+use rayon::prelude::*;
 
 /// A group of duplicate files.
 struct DupeGroup {
     size: u64,
     paths: Vec<PathBuf>,
+}
+
+/// Default scan paths (Documents + Downloads — where dupes usually live).
+fn default_scan_paths() -> Vec<PathBuf> {
+    let home = crate::error::home_or_exit();
+    vec![
+        home.join("Documents"),
+        home.join("Downloads"),
+        home.join("Desktop"),
+        home.join("Pictures"),
+        home.join("Movies"),
+        home.join("Music"),
+    ]
+    .into_iter()
+    .filter(|p| p.exists())
+    .collect()
 }
 
 pub fn run(path: &str, min_size: u64) {
@@ -22,46 +40,54 @@ pub fn run(path: &str, min_size: u64) {
 
     super::ui::print_header("\x1b[1;34mDuplicate Finder\x1b[0m");
 
-    let scan_path = if path == "~" {
-        crate::error::home_or_exit()
+    // Determine scan paths
+    let scan_paths: Vec<PathBuf> = if path == "~" {
+        default_scan_paths()
     } else {
-        PathBuf::from(path)
+        vec![PathBuf::from(path)]
     };
 
-    println!("  Scanning: {}", scan_path.display());
+    let home_str = crate::error::home_or_exit().display().to_string();
+    println!("  Scanning: {}",
+        scan_paths.iter()
+            .map(|p| p.display().to_string().replace(&home_str, "~"))
+            .collect::<Vec<_>>()
+            .join(", "));
     println!("  Min size: {}\n", ByteSize::b(min_size));
 
-    // Phase 1: Group files by size
-    print!("  \x1b[33m\u{2022}\x1b[0m Phase 1: Grouping by file size...\r");
+    // Phase 1: Group files by size (fast, just stat calls)
+    print!("  \x1b[33m\u{2022}\x1b[0m Phase 1: Scanning files...\r");
     let _ = io::stdout().flush();
 
     let mut size_groups: HashMap<u64, Vec<PathBuf>> = HashMap::new();
     let mut total_files: u64 = 0;
 
-    for entry in WalkDir::new(&scan_path)
-        .follow_links(false)
-        .into_iter()
-        .filter_map(|e| e.ok())
-    {
-        if !entry.file_type().is_file() { continue; }
-        let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
-        if size < min_size { continue; }
+    for scan_path in &scan_paths {
+        for entry in WalkDir::new(scan_path)
+            .follow_links(false)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            if !entry.file_type().is_file() { continue; }
+            let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+            if size < min_size { continue; }
 
-        size_groups.entry(size)
-            .or_default()
-            .push(entry.path().to_path_buf());
-        total_files += 1;
+            size_groups.entry(size)
+                .or_default()
+                .push(entry.path().to_path_buf());
+            total_files += 1;
+        }
     }
 
-    // Keep only groups with 2+ files (potential dupes)
+    // Keep only groups with 2+ files
     let candidates: Vec<(u64, Vec<PathBuf>)> = size_groups.into_iter()
         .filter(|(_, paths)| paths.len() >= 2)
         .collect();
 
     let candidate_count: usize = candidates.iter().map(|(_, p)| p.len()).sum();
     print!("\r\x1b[K");
-    println!("  \x1b[32m\u{2713}\x1b[0m Scanned {} files, {} candidates in {} size groups",
-        total_files, candidate_count, candidates.len());
+    println!("  \x1b[32m\u{2713}\x1b[0m Scanned {} files, {} candidates",
+        total_files, candidate_count);
 
     if candidates.is_empty() {
         println!("\n  \x1b[32m\u{2713}\x1b[0m No duplicates found!\n");
@@ -69,31 +95,29 @@ pub fn run(path: &str, min_size: u64) {
         return;
     }
 
-    // Phase 2: Hash first 64KB to find actual duplicates
-    print!("  \x1b[33m\u{2022}\x1b[0m Phase 2: Hashing candidates...\r");
+    // Phase 2: Parallel hashing
+    print!("  \x1b[33m\u{2022}\x1b[0m Phase 2: Hashing {} files (parallel)...\r", candidate_count);
     let _ = io::stdout().flush();
 
+    let checked = AtomicU64::new(0);
     let mut dupe_groups: Vec<DupeGroup> = Vec::new();
-    let mut checked: u64 = 0;
 
     for (size, paths) in &candidates {
-        // Hash first 64KB of each file
+        // Hash all files in this size group in parallel
+        let hashes: Vec<(u64, PathBuf)> = paths.par_iter()
+            .filter_map(|path| {
+                checked.fetch_add(1, Ordering::Relaxed);
+                hash_file_partial(path).ok().map(|h| (h, path.clone()))
+            })
+            .collect();
+
+        // Group by hash
         let mut hash_map: HashMap<u64, Vec<PathBuf>> = HashMap::new();
-
-        for path in paths {
-            checked += 1;
-            if checked % 100 == 0 {
-                print!("\r\x1b[K  \x1b[33m\u{2022}\x1b[0m Phase 2: Hashing... ({}/{})\r",
-                    checked, candidate_count);
-                let _ = io::stdout().flush();
-            }
-
-            if let Ok(hash) = hash_file_partial(path) {
-                hash_map.entry(hash).or_default().push(path.clone());
-            }
+        for (hash, path) in hashes {
+            hash_map.entry(hash).or_default().push(path);
         }
 
-        // Groups with same partial hash = likely duplicates
+        // Same hash = duplicates
         for (_, group_paths) in hash_map {
             if group_paths.len() >= 2 {
                 dupe_groups.push(DupeGroup {
@@ -105,7 +129,7 @@ pub fn run(path: &str, min_size: u64) {
     }
 
     print!("\r\x1b[K");
-    println!("  \x1b[32m\u{2713}\x1b[0m Hashed {} files\n", checked);
+    println!("  \x1b[32m\u{2713}\x1b[0m Hashed {} files\n", checked.load(Ordering::Relaxed));
 
     if dupe_groups.is_empty() {
         println!("  \x1b[32m\u{2713}\x1b[0m No duplicates found!\n");
@@ -113,35 +137,31 @@ pub fn run(path: &str, min_size: u64) {
         return;
     }
 
-    // Sort by total wasted space
+    // Sort by wasted space
     dupe_groups.sort_by(|a, b| {
         let waste_a = a.size * (a.paths.len() as u64 - 1);
         let waste_b = b.size * (b.paths.len() as u64 - 1);
         waste_b.cmp(&waste_a)
     });
 
-    // Display results
+    // Display
     let total_waste: u64 = dupe_groups.iter()
         .map(|g| g.size * (g.paths.len() as u64 - 1))
         .sum();
-    let total_groups = dupe_groups.len();
 
     println!("  \x1b[1mFound {} duplicate groups ({} wasted)\x1b[0m\n",
-        total_groups, ByteSize::b(total_waste).to_string().red());
-
-    let home_str = crate::error::home_or_exit().display().to_string();
+        dupe_groups.len(), ByteSize::b(total_waste).to_string().red());
 
     for (i, group) in dupe_groups.iter().take(10).enumerate() {
         let waste = group.size * (group.paths.len() as u64 - 1);
         println!("  \x1b[33m{}.\x1b[0m {} each \u{00d7} {} copies = \x1b[31m{} wasted\x1b[0m",
-            i + 1,
-            ByteSize::b(group.size),
-            group.paths.len(),
-            ByteSize::b(waste));
+            i + 1, ByteSize::b(group.size), group.paths.len(), ByteSize::b(waste));
 
         for (j, path) in group.paths.iter().enumerate() {
             let display = path.display().to_string().replace(&home_str, "~");
-            let short = if display.len() > 60 { format!("...{}", &display[display.len()-57..]) } else { display };
+            let short = if display.len() > 60 {
+                format!("...{}", &display[display.len()-57..])
+            } else { display };
             if j == 0 {
                 println!("    \x1b[32m\u{2713} keep\x1b[0m  {}", short);
             } else {
@@ -151,14 +171,14 @@ pub fn run(path: &str, min_size: u64) {
         println!();
     }
 
-    if total_groups > 10 {
-        println!("  \x1b[90m... +{} more groups\x1b[0m\n", total_groups - 10);
+    if dupe_groups.len() > 10 {
+        println!("  \x1b[90m... +{} more groups\x1b[0m\n", dupe_groups.len() - 10);
     }
 
     // Summary + actions
     println!("  \x1b[90m\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\x1b[0m");
     println!("  Total wasted: \x1b[1;31m{}\x1b[0m in {} groups",
-        ByteSize::b(total_waste), total_groups);
+        ByteSize::b(total_waste), dupe_groups.len());
     println!();
     println!("  \x1b[1mActions:\x1b[0m  \x1b[32ma\x1b[0m delete all dupes (keep newest)  \x1b[90mq\x1b[0m quit");
     println!();
@@ -187,7 +207,6 @@ pub fn run(path: &str, min_size: u64) {
             println!("\n  \x1b[33mRemoving duplicates (keeping newest)...\x1b[0m");
             let mut freed: u64 = 0;
             for group in &dupe_groups {
-                // Keep the newest file (by modified time), delete the rest
                 let mut with_times: Vec<(u64, &PathBuf)> = group.paths.iter()
                     .map(|p| {
                         let mtime = p.metadata()
@@ -199,9 +218,8 @@ pub fn run(path: &str, min_size: u64) {
                         (mtime, p)
                     })
                     .collect();
-                with_times.sort_by(|a, b| b.0.cmp(&a.0)); // newest first
+                with_times.sort_by(|a, b| b.0.cmp(&a.0));
 
-                // Skip first (newest), delete rest
                 for (_, path) in with_times.iter().skip(1) {
                     if std::fs::remove_file(path).is_ok() {
                         freed += group.size;
@@ -229,10 +247,11 @@ fn hash_file_partial(path: &Path) -> io::Result<u64> {
     let size = metadata.len();
 
     let mut hasher = DefaultHasher::new();
-    size.hash(&mut hasher); // Include size in hash
+    size.hash(&mut hasher);
 
     // Read first 64KB
-    let mut buf = vec![0u8; 65536.min(size as usize)];
+    let read_size = 65536.min(size as usize);
+    let mut buf = vec![0u8; read_size];
     file.read_exact(&mut buf)?;
     buf.hash(&mut hasher);
 
