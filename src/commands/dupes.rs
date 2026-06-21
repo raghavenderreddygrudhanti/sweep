@@ -80,15 +80,14 @@ fn pick_folders() -> Vec<PathBuf> {
                         } else {
                             selected[idx] = !selected[idx];
                         }
-                        // Redraw
-                        // Move cursor up to redraw options
-                        print!("\x1b[{}A", options.len() + 3);
+                        // Redraw from top of options
+                        print!("\x1b[{}A\r", options.len() + 3);
                         for (i, (label, _)) in options.iter().enumerate() {
                             let mark = if selected[i] { "\x1b[32m\u{25cf}\x1b[0m" } else { "\x1b[90m\u{25cb}\x1b[0m" };
-                            println!("\x1b[K    {} {}. {}", mark, i + 1, label);
+                            print!("\x1b[2K    {} {}. {}\n", mark, i + 1, label);
                         }
-                        println!("\x1b[K\n  \x1b[90mPress 1-{} to toggle, Enter to start, q to cancel\x1b[0m", options.len());
-                        print!("\x1b[K  \x1b[1;33mChoice:\x1b[0m ");
+                        print!("\x1b[2K\n\x1b[2K  \x1b[90mPress 1-{} to toggle, Enter to start, q to cancel\x1b[0m\n", options.len());
+                        print!("\x1b[2K  \x1b[1;33mChoice:\x1b[0m ");
                         let _ = io::stdout().flush();
                     }
                 }
