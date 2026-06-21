@@ -31,7 +31,7 @@ pub fn map_key(key: KeyEvent) -> NavAction {
         KeyCode::Down | KeyCode::Char('j') => NavAction::Down,
         KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => NavAction::Select,
         KeyCode::Esc | KeyCode::Backspace => NavAction::Back,
-        KeyCode::Left | KeyCode::Char('h') | KeyCode::Char('b') => NavAction::Back,
+        KeyCode::Left | KeyCode::Char('h') => NavAction::Back,
         KeyCode::Char('q') => NavAction::Quit,
         KeyCode::Char(' ') => NavAction::Toggle,
         KeyCode::Char('d') | KeyCode::Char('D') => NavAction::Delete,
