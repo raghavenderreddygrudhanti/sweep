@@ -171,7 +171,7 @@ fn get_disk_summary() -> String {
     String::from("  \x1b[90mDisk info unavailable\x1b[0m\r\n")
 }
 
-/// Fast estimate of reclaimable space (uses cached sizes or quick stat).
+/// Fast estimate of reclaimable space (quick stat, no deep scan).
 fn quick_reclaimable_estimate() -> u64 {
     let home = crate::error::home_or_exit();
     let paths = [
@@ -184,19 +184,22 @@ fn quick_reclaimable_estimate() -> u64 {
         home.join("Library/Developer/Xcode/DerivedData"),
     ];
 
-    // Use cached sizes if available, otherwise skip (don't slow down menu)
-    let cached = crate::cache::load_cached_sizes();
     let mut total: u64 = 0;
 
     for path in &paths {
-        if let Some(&size) = cached.get(path.to_str().unwrap_or("")) {
-            total += size;
-        } else if path.exists() {
-            // Quick size check: just count immediate children metadata
-            if let Ok(entries) = std::fs::read_dir(path) {
-                let count = entries.count() as u64;
-                // Rough estimate: avg 50MB per entry for cache dirs
-                total += count * 50 * 1024 * 1024;
+        if !path.exists() { continue; }
+        // Quick estimate: sum immediate children metadata (fast, no recursion)
+        if let Ok(entries) = std::fs::read_dir(path) {
+            for entry in entries.flatten() {
+                let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                if size > 0 {
+                    total += size;
+                } else if entry.path().is_dir() {
+                    // For directories, use a rough estimate based on entry count
+                    if let Ok(sub) = std::fs::read_dir(entry.path()) {
+                        total += sub.count() as u64 * 5 * 1024 * 1024; // ~5MB per subdir
+                    }
+                }
             }
         }
     }
