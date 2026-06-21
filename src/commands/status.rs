@@ -15,11 +15,10 @@ pub fn run() {
 
     loop {
         sys.refresh_all();
-        let _ = execute!(stdout, cursor::MoveTo(0, 0));
+        let _ = execute!(stdout, cursor::MoveTo(0, 0), terminal::Clear(terminal::ClearType::All));
 
         let out = build_status(&sys);
         let _ = stdout.write_all(out.as_bytes());
-        let _ = stdout.write_all(b"\x1b[J");
         let _ = stdout.flush();
 
         if event::poll(std::time::Duration::from_millis(1000)).unwrap_or(false) {
@@ -140,7 +139,7 @@ fn build_status(sys: &System) -> String {
 }
 
 fn bar(value: u64, max: u64) -> String {
-    let width: usize = 15;
+    let width: usize = 12;
     let filled = (value as f64 / max as f64 * width as f64).min(width as f64) as usize;
     let empty = width.saturating_sub(filled);
     let b = format!("{}{}", "\u{2588}".repeat(filled), "\u{2591}".repeat(empty));
@@ -150,7 +149,7 @@ fn bar(value: u64, max: u64) -> String {
 }
 
 fn bar_green(value: u64, max: u64) -> String {
-    let width: usize = 15;
+    let width: usize = 12;
     let filled = (value as f64 / max as f64 * width as f64).min(width as f64) as usize;
     let empty = width.saturating_sub(filled);
     format!("\x1b[32m{}\x1b[0m\x1b[90m{}\x1b[0m", "\u{2588}".repeat(filled), "\u{2591}".repeat(empty))
