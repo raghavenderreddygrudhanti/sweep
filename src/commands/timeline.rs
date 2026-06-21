@@ -10,7 +10,6 @@ use std::io::{self, Write};
 use crossterm::{terminal, cursor, execute, event};
 use crossterm::event::Event;
 use bytesize::ByteSize;
-use rayon::prelude::*;
 
 #[derive(Clone)]
 struct TimelineItem {
@@ -79,24 +78,38 @@ pub fn run() {
 
     let total_count = paths.len();
 
-    // Parallel scanning in background
+    // Parallel scanning in background — each item updates as it completes
     let items_bg = Arc::clone(&items);
-    let worker = std::thread::spawn(move || {
-        // Scan all in parallel using rayon
-        let results: Vec<(usize, u64)> = (0..total_count).into_par_iter()
-            .map(|i| {
-                let path_str = items_bg.lock().unwrap()[i].path.clone();
-                let size = scanner::scan_size_native(std::path::Path::new(&path_str));
-                (i, size)
-            })
-            .collect();
+    let _worker = std::thread::spawn(move || {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let next_idx = Arc::new(AtomicUsize::new(0));
 
-        // Update items with results
-        let mut items = items_bg.lock().unwrap();
-        for (i, size) in results {
-            items[i].current_size = size;
-            items[i].delta = size as i64 - items[i].prev_size as i64;
-            items[i].done = true;
+        // Spawn worker threads (use 4-8 parallel scanners)
+        let num_workers = 6.min(total_count);
+        let mut handles = Vec::new();
+
+        for _ in 0..num_workers {
+            let items_w = Arc::clone(&items_bg);
+            let idx = Arc::clone(&next_idx);
+            handles.push(std::thread::spawn(move || {
+                loop {
+                    let i = idx.fetch_add(1, Ordering::SeqCst);
+                    if i >= total_count { break; }
+
+                    let path_str = items_w.lock().unwrap()[i].path.clone();
+                    let size = scanner::scan_size_native(std::path::Path::new(&path_str));
+
+                    // Update immediately when this one finishes
+                    let mut items = items_w.lock().unwrap();
+                    items[i].current_size = size;
+                    items[i].delta = size as i64 - items[i].prev_size as i64;
+                    items[i].done = true;
+                }
+            }));
+        }
+
+        for h in handles {
+            let _ = h.join();
         }
     });
 
@@ -201,11 +214,6 @@ pub fn run() {
         }
 
         frame += 1;
-
-        // Check if worker is done
-        if all_done && !worker.is_finished() {
-            // Wait a tiny bit for thread cleanup
-        }
     }
 
     let _ = execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show);
