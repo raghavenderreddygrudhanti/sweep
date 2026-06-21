@@ -34,7 +34,7 @@ pub fn run() {
         let _ = io::stdout().flush();
 
         let size = scanner::scan_size_native(path);
-        if size < 50 * 1024 * 1024 { // Skip < 50MB
+        if size < 10 * 1024 * 1024 { // Skip < 10MB
             print!("\r\x1b[K");
             continue;
         }
@@ -167,7 +167,7 @@ fn run_json() {
     for (path, label) in &sources {
         if !path.exists() { continue; }
         let size = scanner::scan_size_native(path);
-        if size < 50 * 1024 * 1024 { continue; }
+        if size < 10 * 1024 * 1024 { continue; }
 
         let scored = recommend_engine::score_item(path, label, size);
         if scored.action != Action::Keep {
