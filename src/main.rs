@@ -7,6 +7,7 @@ mod error;
 mod output;
 mod whitelist;
 mod oplog;
+mod recommend_engine;
 
 use clap::{Parser, Subcommand};
 
