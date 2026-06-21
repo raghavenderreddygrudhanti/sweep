@@ -31,7 +31,7 @@ pub fn map_key(key: KeyEvent) -> NavAction {
         KeyCode::Down | KeyCode::Char('j') => NavAction::Down,
         KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => NavAction::Select,
         KeyCode::Esc | KeyCode::Backspace => NavAction::Back,
-        KeyCode::Left | KeyCode::Char('h') => NavAction::Back,
+        KeyCode::Left | KeyCode::Char('h') | KeyCode::Char('b') => NavAction::Back,
         KeyCode::Char('q') => NavAction::Quit,
         KeyCode::Char(' ') => NavAction::Toggle,
         KeyCode::Char('d') | KeyCode::Char('D') => NavAction::Delete,
@@ -52,7 +52,7 @@ pub fn footer_sep() -> &'static str {
 
 /// Footer for browse/explorer screens (TUI).
 pub fn footer_browse() -> &'static str {
-    "  \x1b[90m↑↓ nav · →Enter open · ←Esc back · Space select · d del · q quit\x1b[0m\r\n"
+    "  \x1b[90m\u{2191}\u{2193} nav \u{b7} Enter open \u{b7} b back \u{b7} Space select \u{b7} d del \u{b7} q quit\x1b[0m\r\n"
 }
 
 /// Footer showing selected count + actions (TUI).
