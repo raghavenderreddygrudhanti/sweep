@@ -12,6 +12,7 @@ const MENU: &[(&str, &str, &str)] = &[
     ("Optimize",  "Refresh system caches & services",   "\x1b[32m"),
     ("Recommend", "Smart space recovery suggestions",   "\x1b[33m"),
     ("Timeline",  "What grew or shrank recently",       "\x1b[34m"),
+    ("Watch",     "Monitor disk, alert when low",       "\x1b[36m"),
     ("Status",    "Real-time system monitor",           "\x1b[36m"),
 ];
 
@@ -89,6 +90,7 @@ pub fn run() {
                     super::ui::NavAction::Char('6') => { selected = 5; }
                     super::ui::NavAction::Char('7') => { selected = 6; }
                     super::ui::NavAction::Char('8') => { selected = 7; }
+                    super::ui::NavAction::Char('9') => { selected = 8; }
                     super::ui::NavAction::Back | super::ui::NavAction::Quit => {
                         break;
                     }
@@ -121,7 +123,8 @@ fn run_selected(idx: usize) {
         4 => super::optimize::run(false),
         5 => super::recommend::run(),
         6 => super::timeline::run(),
-        7 => super::status::run(),
+        7 => super::watch::run(20),
+        8 => super::status::run(),
         _ => {}
     }
 }
