@@ -29,6 +29,15 @@ serde_json = "1"
 trash = "5"
 thiserror = "2"
 
+[dependencies.llama-crab]
+version = "0.1"
+features = ["hf-hub"]
+optional = true
+
+[features]
+default = []
+ai = ["llama-crab"]
+
 [profile.release]
 lto = true
 codegen-units = 1

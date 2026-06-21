@@ -85,6 +85,12 @@ enum Commands {
     Timeline,
     /// Smart recommendations for disk space recovery
     Recommend,
+    /// AI-powered smart scan — classifies files as safe/review/keep
+    Smart {
+        /// Use AI model (SmolLM2) for deeper analysis
+        #[arg(long)]
+        deep: bool,
+    },
     /// Show operation history
     History,
     /// Generate shell completions
@@ -119,6 +125,7 @@ fn main() {
         Some(Commands::Status) => commands::status::run(),
         Some(Commands::Timeline) => commands::timeline::run(),
         Some(Commands::Recommend) => commands::recommend::run(),
+        Some(Commands::Smart { deep }) => commands::smart::run(deep),
         Some(Commands::History) => {
             if cli.json {
                 history::show_history_json();

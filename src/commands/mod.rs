@@ -12,3 +12,4 @@ pub mod footer;
 pub mod ui;
 pub mod timeline;
 pub mod recommend;
+pub mod smart;
