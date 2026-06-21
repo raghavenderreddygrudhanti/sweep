@@ -126,13 +126,12 @@ fn run_selected(idx: usize) {
     }
 }
 
-/// Get a one-line disk usage summary with visual bar.
+/// Get a one-line disk usage summary with visual bar + reclaimable estimate.
 fn get_disk_summary() -> String {
     use sysinfo::Disks;
 
     let disks = Disks::new_with_refreshed_list();
 
-    // Find the main disk (mounted at /)
     for disk in disks.list() {
         if disk.mount_point() == std::path::Path::new("/") {
             let total = disk.total_space();
@@ -140,21 +139,15 @@ fn get_disk_summary() -> String {
             let used = total - available;
             let pct = (used as f64 / total as f64 * 100.0) as u8;
 
-            // Visual bar (30 chars wide)
-            let bar_width = 30;
-            let filled = (pct as usize * bar_width) / 100;
-            let empty = bar_width - filled;
+            let bar_color = if pct > 90 { "\x1b[31m" }
+                else if pct > 75 { "\x1b[33m" }
+                else { "\x1b[32m" };
 
-            let bar_color = if pct > 90 { "\x1b[31m" }      // red
-                else if pct > 75 { "\x1b[33m" }             // yellow
-                else { "\x1b[32m" };                         // green
-
-            // Gradient bar using braille/block characters
             let bar_width = 25;
             let filled = (pct as usize * bar_width) / 100;
             let empty = bar_width - filled;
 
-            return format!(
+            let mut s = format!(
                 "  \x1b[1mDisk:\x1b[0m {}\u{2501}\u{2501}{}\x1b[90m{}\x1b[0m {} / {} \x1b[90m({}% used)\x1b[0m\r\n",
                 bar_color,
                 "\u{2501}".repeat(filled.saturating_sub(1)),
@@ -163,10 +156,52 @@ fn get_disk_summary() -> String {
                 ByteSize::b(total),
                 pct
             );
+
+            // Quick reclaimable estimate from known junk paths
+            let reclaimable = quick_reclaimable_estimate();
+            if reclaimable > 500 * 1024 * 1024 {
+                s.push_str(&format!("  \x1b[90m\u{2248}\x1b[0m \x1b[33m~{}\x1b[0m \x1b[90mreclaimable\x1b[0m\r\n",
+                    ByteSize::b(reclaimable)));
+            }
+
+            return s;
         }
     }
 
     String::from("  \x1b[90mDisk info unavailable\x1b[0m\r\n")
+}
+
+/// Fast estimate of reclaimable space (uses cached sizes or quick stat).
+fn quick_reclaimable_estimate() -> u64 {
+    let home = crate::error::home_or_exit();
+    let paths = [
+        home.join(".cache/huggingface/hub"),
+        home.join(".ollama/models"),
+        home.join("Library/Caches"),
+        home.join(".gradle/caches"),
+        home.join(".m2/repository"),
+        home.join("Library/Logs"),
+        home.join("Library/Developer/Xcode/DerivedData"),
+    ];
+
+    // Use cached sizes if available, otherwise skip (don't slow down menu)
+    let cached = crate::cache::load_cached_sizes();
+    let mut total: u64 = 0;
+
+    for path in &paths {
+        if let Some(&size) = cached.get(path.to_str().unwrap_or("")) {
+            total += size;
+        } else if path.exists() {
+            // Quick size check: just count immediate children metadata
+            if let Ok(entries) = std::fs::read_dir(path) {
+                let count = entries.count() as u64;
+                // Rough estimate: avg 50MB per entry for cache dirs
+                total += count * 50 * 1024 * 1024;
+            }
+        }
+    }
+
+    total
 }
 
 fn show_more_options() {

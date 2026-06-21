@@ -164,6 +164,17 @@ pub fn run(dry_run: bool, mode: DeleteMode) {
     println!("  \u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}");
     println!();
 
+    // Show top 5 largest items that will be deleted
+    let mut sorted_targets: Vec<&CleanTarget> = targets.iter().collect();
+    sorted_targets.sort_by(|a, b| b.size.cmp(&a.size));
+    println!("  \x1b[1mLargest items to remove:\x1b[0m");
+    for t in sorted_targets.iter().take(5) {
+        if t.size > 0 {
+            println!("    \x1b[90m\u{2022}\x1b[0m {:>9}  {}", ByteSize::b(t.size), t.name);
+        }
+    }
+    println!();
+
     match mode {
         DeleteMode::Trash => println!("  \x1b[90mItems will be moved to the Trash (recoverable).\x1b[0m"),
         DeleteMode::Force => println!("  \x1b[1;31mItems will be permanently deleted (--force).\x1b[0m"),
