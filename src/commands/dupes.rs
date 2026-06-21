@@ -55,14 +55,21 @@ pub fn run(path: &str, min_size: u64) {
             .join(", "));
     println!("  Min size: {}\n", ByteSize::b(min_size));
 
-    // Phase 1: Group files by size (fast, just stat calls)
+    // Phase 1: Group files by size (skip junk dirs, parallel-friendly)
     let mut size_groups: HashMap<u64, Vec<PathBuf>> = HashMap::new();
     let mut total_files: u64 = 0;
+
+    let skip_dirs = ["node_modules", ".git", "target", ".venv", "__pycache__",
+        "Library", ".cache", ".Trash", ".cargo", ".rustup", ".gradle", ".m2"];
 
     for scan_path in &scan_paths {
         for entry in WalkDir::new(scan_path)
             .follow_links(false)
             .into_iter()
+            .filter_entry(|e| {
+                let name = e.file_name().to_string_lossy();
+                !skip_dirs.contains(&name.as_ref())
+            })
             .filter_map(|e| e.ok())
         {
             if !entry.file_type().is_file() { continue; }
@@ -74,8 +81,8 @@ pub fn run(path: &str, min_size: u64) {
                 .push(entry.path().to_path_buf());
             total_files += 1;
 
-            if total_files % 1000 == 0 {
-                print!("\r\x1b[K  \x1b[33m\u{2022}\x1b[0m Phase 1: Scanning... {} files found", total_files);
+            if total_files % 500 == 0 {
+                print!("\r\x1b[K  \x1b[33m\u{2022}\x1b[0m Phase 1: {} files", total_files);
                 let _ = io::stdout().flush();
             }
         }
@@ -250,7 +257,7 @@ pub fn run(path: &str, min_size: u64) {
     wait_for_key();
 }
 
-/// Hash first 64KB + last 64KB of a file. Fast fingerprint.
+/// Hash first 4KB + last 4KB of a file. Ultra-fast fingerprint.
 fn hash_file_partial(path: &Path) -> io::Result<u64> {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
@@ -262,17 +269,17 @@ fn hash_file_partial(path: &Path) -> io::Result<u64> {
     let mut hasher = DefaultHasher::new();
     size.hash(&mut hasher);
 
-    // Read first 64KB
-    let read_size = 65536.min(size as usize);
+    // Read first 4KB
+    let read_size = 4096.min(size as usize);
     let mut buf = vec![0u8; read_size];
     file.read_exact(&mut buf)?;
     buf.hash(&mut hasher);
 
-    // Read last 64KB if file is large enough
-    if size > 131072 {
+    // Read last 4KB if file is large enough
+    if size > 8192 {
         use std::io::Seek;
-        file.seek(std::io::SeekFrom::End(-65536))?;
-        let mut end_buf = vec![0u8; 65536];
+        file.seek(std::io::SeekFrom::End(-4096))?;
+        let mut end_buf = vec![0u8; 4096];
         file.read_exact(&mut end_buf)?;
         end_buf.hash(&mut hasher);
     }
