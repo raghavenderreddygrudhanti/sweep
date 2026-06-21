@@ -149,12 +149,16 @@ fn get_disk_summary() -> String {
                 else if pct > 75 { "\x1b[33m" }             // yellow
                 else { "\x1b[32m" };                         // green
 
+            // Gradient bar using braille/block characters
+            let bar_width = 25;
+            let filled = (pct as usize * bar_width) / 100;
+            let empty = bar_width - filled;
+
             return format!(
-                "  \x1b[1mDisk:\x1b[0m {}{}{}\x1b[90m{}\x1b[0m {} / {} ({}% used)\r\n",
+                "  \x1b[1mDisk:\x1b[0m {}\u{2501}\u{2501}{}\x1b[90m{}\x1b[0m {} / {} \x1b[90m({}% used)\x1b[0m\r\n",
                 bar_color,
-                "\u{2588}".repeat(filled),
-                "\x1b[0m",
-                "\u{2591}".repeat(empty),
+                "\u{2501}".repeat(filled.saturating_sub(1)),
+                "\u{2508}".repeat(empty),
                 ByteSize::b(used),
                 ByteSize::b(total),
                 pct

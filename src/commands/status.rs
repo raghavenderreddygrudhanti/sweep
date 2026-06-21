@@ -150,17 +150,22 @@ fn bar(value: u64, max: u64) -> String {
     let width: usize = 12;
     let filled = (value as f64 / max as f64 * width as f64).min(width as f64) as usize;
     let empty = width.saturating_sub(filled);
-    let b = format!("{}{}", "\u{2588}".repeat(filled), "\u{2591}".repeat(empty));
-    if value > 80 { format!("\x1b[31m{}\x1b[0m", b) }
-    else if value > 60 { format!("\x1b[33m{}\x1b[0m", b) }
-    else { format!("\x1b[32m{}\x1b[0m", b) }
+    let color = if value > 80 { "\x1b[31m" }
+        else if value > 60 { "\x1b[33m" }
+        else { "\x1b[32m" };
+    format!("{}\u{2501}{}\x1b[0m\x1b[90m{}\x1b[0m",
+        color,
+        "\u{2501}".repeat(filled.saturating_sub(1).max(0)),
+        "\u{2508}".repeat(empty))
 }
 
 fn bar_green(value: u64, max: u64) -> String {
     let width: usize = 12;
     let filled = (value as f64 / max as f64 * width as f64).min(width as f64) as usize;
     let empty = width.saturating_sub(filled);
-    format!("\x1b[32m{}\x1b[0m\x1b[90m{}\x1b[0m", "\u{2588}".repeat(filled), "\u{2591}".repeat(empty))
+    format!("\x1b[32m{}\x1b[0m\x1b[90m{}\x1b[0m",
+        "\u{2501}".repeat(filled),
+        "\u{2508}".repeat(empty))
 }
 
 fn compute_health(cpu: f32, mem: u64) -> u64 {
