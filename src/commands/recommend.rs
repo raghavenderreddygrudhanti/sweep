@@ -78,7 +78,14 @@ pub fn run() {
 
     if recommendations.is_empty() {
         println!("  \x1b[32m\u{2713}\x1b[0m System looks clean! No major reclaimable space found.\n");
-
+        println!("  \x1b[90mPress any key to continue...\x1b[0m");
+        let _ = crossterm::terminal::enable_raw_mode();
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        while crossterm::event::poll(std::time::Duration::from_millis(150)).unwrap_or(false) {
+            let _ = crossterm::event::read();
+        }
+        let _ = crossterm::event::read();
+        let _ = crossterm::terminal::disable_raw_mode();
         return;
     }
 
