@@ -5,6 +5,8 @@ mod history;
 mod cache;
 mod error;
 mod output;
+mod whitelist;
+mod oplog;
 
 use clap::{Parser, Subcommand};
 
@@ -23,6 +25,14 @@ struct Cli {
     /// Permanently delete instead of moving to Trash
     #[arg(long, global = true)]
     force: bool,
+
+    /// Show/manage protected paths whitelist
+    #[arg(long, global = true)]
+    whitelist: bool,
+
+    /// Verbose debug output (show every operation)
+    #[arg(long, global = true)]
+    debug: bool,
 }
 
 #[derive(Subcommand)]
@@ -33,15 +43,9 @@ enum Commands {
         #[arg(default_value = "~")]
         path: String,
     },
-    /// Clean caches, logs, and junk files
+    /// Clean caches, logs, and junk files (all categories)
     Clean {
         /// Preview what would be deleted without actually deleting
-        #[arg(long)]
-        dry_run: bool,
-    },
-    /// Clean AI/ML caches (HuggingFace, Ollama, torch, models)
-    Ai {
-        /// Preview only
         #[arg(long)]
         dry_run: bool,
     },
@@ -50,16 +54,6 @@ enum Commands {
         /// Preview only
         #[arg(long)]
         dry_run: bool,
-    },
-    /// Clean developer build artifacts (node_modules, target, .venv)
-    Dev {
-        /// Preview only
-        #[arg(long)]
-        dry_run: bool,
-
-        /// Minimum age in days before cleaning (default: 7)
-        #[arg(long, default_value = "7")]
-        older_than: u64,
     },
     /// Uninstall apps and all their remnants
     Uninstall {
@@ -78,6 +72,22 @@ enum Commands {
         /// Preview only
         #[arg(long)]
         dry_run: bool,
+    },
+    /// Find duplicate files wasting space
+    Dupes {
+        /// Path to scan (defaults to home)
+        #[arg(default_value = "~")]
+        path: String,
+
+        /// Minimum file size to check (in MB)
+        #[arg(long, default_value = "1")]
+        min: u64,
+    },
+    /// Monitor disk space in background, alert when low
+    Watch {
+        /// Alert when free space drops below this (GB)
+        #[arg(long, default_value = "20")]
+        at: u64,
     },
     /// Show real-time system status
     Status,
@@ -107,15 +117,21 @@ fn main() {
         cleaners::DeleteMode::Trash
     };
 
+    // Handle --whitelist flag
+    if cli.whitelist {
+        whitelist::show_whitelist();
+        return;
+    }
+
     match cli.command {
         Some(Commands::Scan { path }) => commands::scan::run(&path),
         Some(Commands::Clean { dry_run }) => commands::clean::run(dry_run, delete_mode),
-        Some(Commands::Ai { dry_run }) => commands::ai::run(dry_run, delete_mode),
         Some(Commands::Docker { dry_run }) => commands::docker::run(dry_run),
-        Some(Commands::Dev { dry_run, older_than }) => commands::dev::run(dry_run, older_than, delete_mode),
         Some(Commands::Uninstall { dry_run }) => commands::uninstall::run(dry_run, delete_mode),
         Some(Commands::Optimize { dry_run }) => commands::optimize::run(dry_run),
         Some(Commands::Installer { dry_run }) => commands::installer::run(dry_run, delete_mode),
+        Some(Commands::Dupes { path, min }) => commands::dupes::run(&path, min * 1024 * 1024),
+        Some(Commands::Watch { at }) => commands::watch::run(at),
         Some(Commands::Status) => commands::status::run(),
         Some(Commands::Timeline) => commands::timeline::run(),
         Some(Commands::Recommend) => commands::recommend::run(),
