@@ -3,17 +3,17 @@ use crossterm::event::Event;
 use std::io::{self, Write};
 use bytesize::ByteSize;
 
-const MENU: &[(&str, &str, &str, &str)] = &[
-    // (label, description, color, icon)
-    ("clean",     "Free up disk space",                 "\x1b[32m", "\u{1f9f9}"),  // green
-    ("AI/ML",     "Clean model & package caches",       "\x1b[35m", "\u{1f916}"),  // magenta
-    ("Dev",       "Remove old build artifacts",         "\x1b[36m", "\u{26a1}"),   // cyan
-    ("Uninstall", "Remove apps and leftover files",     "\x1b[33m", "\u{1f5d1}"),  // yellow
-    ("Analyze",   "Explore disk usage",                 "\x1b[34m", "\u{1f4ca}"),  // blue
-    ("Optimize",  "Refresh system caches & services",   "\x1b[32m", "\u{2699}"),   // green
-    ("Recommend", "Smart space recovery suggestions",   "\x1b[33m", "\u{1f4a1}"),  // yellow
-    ("Timeline",  "What grew or shrank recently",       "\x1b[34m", "\u{1f4c8}"),  // blue
-    ("Status",    "Real-time system monitor",           "\x1b[36m", "\u{1f4bb}"),  // cyan
+const MENU: &[(&str, &str, &str)] = &[
+    // (label, description, color)
+    ("clean",     "Free up disk space",                 "\x1b[32m"),
+    ("AI/ML",     "Clean model & package caches",       "\x1b[35m"),
+    ("Dev",       "Remove old build artifacts",         "\x1b[36m"),
+    ("Uninstall", "Remove apps and leftover files",     "\x1b[33m"),
+    ("Analyze",   "Explore disk usage",                 "\x1b[34m"),
+    ("Optimize",  "Refresh system caches & services",   "\x1b[32m"),
+    ("Recommend", "Smart space recovery suggestions",   "\x1b[33m"),
+    ("Timeline",  "What grew or shrank recently",       "\x1b[34m"),
+    ("Status",    "Real-time system monitor",           "\x1b[36m"),
 ];
 
 pub fn run() {
@@ -37,13 +37,13 @@ pub fn run() {
         out.push_str(&disk_info);
         out.push_str("\r\n");
 
-        for (i, (label, desc, color, icon)) in MENU.iter().enumerate() {
+        for (i, (label, desc, color)) in MENU.iter().enumerate() {
             if i == selected {
-                out.push_str(&format!("  \x1b[1;32m\u{25b6}\x1b[0m {} {}\x1b[1m{:<12}\x1b[0m \x1b[37m{}\x1b[0m\r\n",
-                    icon, color, label, desc));
+                out.push_str(&format!("  \x1b[1;32m\u{25b6}\x1b[0m {}\x1b[1m{:<12}\x1b[0m \x1b[37m{}\x1b[0m\r\n",
+                    color, label, desc));
             } else {
-                out.push_str(&format!("    {} {}{:<12}\x1b[0m \x1b[90m{}\x1b[0m\r\n",
-                    icon, color, label, desc));
+                out.push_str(&format!("    {}{:<12}\x1b[0m \x1b[90m{}\x1b[0m\r\n",
+                    color, label, desc));
             }
         }
 
