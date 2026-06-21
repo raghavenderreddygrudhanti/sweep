@@ -56,9 +56,6 @@ pub fn run(path: &str, min_size: u64) {
     println!("  Min size: {}\n", ByteSize::b(min_size));
 
     // Phase 1: Group files by size (fast, just stat calls)
-    print!("  \x1b[33m\u{2022}\x1b[0m Phase 1: Scanning files...\r");
-    let _ = io::stdout().flush();
-
     let mut size_groups: HashMap<u64, Vec<PathBuf>> = HashMap::new();
     let mut total_files: u64 = 0;
 
@@ -76,6 +73,11 @@ pub fn run(path: &str, min_size: u64) {
                 .or_default()
                 .push(entry.path().to_path_buf());
             total_files += 1;
+
+            if total_files % 1000 == 0 {
+                print!("\r\x1b[K  \x1b[33m\u{2022}\x1b[0m Phase 1: Scanning... {} files found", total_files);
+                let _ = io::stdout().flush();
+            }
         }
     }
 
@@ -95,18 +97,30 @@ pub fn run(path: &str, min_size: u64) {
         return;
     }
 
-    // Phase 2: Parallel hashing
-    print!("  \x1b[33m\u{2022}\x1b[0m Phase 2: Hashing {} files (parallel)...\r", candidate_count);
-    let _ = io::stdout().flush();
-
+    // Phase 2: Parallel hashing with progress
+    let total_to_hash = candidate_count as u64;
     let checked = AtomicU64::new(0);
     let mut dupe_groups: Vec<DupeGroup> = Vec::new();
+
+    // Show progress in a separate thread while hashing happens
+    let checked_ref = &checked;
 
     for (size, paths) in &candidates {
         // Hash all files in this size group in parallel
         let hashes: Vec<(u64, PathBuf)> = paths.par_iter()
             .filter_map(|path| {
-                checked.fetch_add(1, Ordering::Relaxed);
+                let done = checked_ref.fetch_add(1, Ordering::Relaxed) + 1;
+                if done % 50 == 0 || done == total_to_hash {
+                    let pct = (done as f64 / total_to_hash as f64 * 100.0) as u64;
+                    let bar_width = 20;
+                    let filled = (pct as usize * bar_width) / 100;
+                    let empty = bar_width - filled;
+                    // Progress bar (written from multiple threads, may flicker slightly)
+                    eprint!("\r\x1b[K  \x1b[33m\u{2022}\x1b[0m Phase 2: \x1b[32m{}\x1b[90m{}\x1b[0m {}/{} ({}%)",
+                        "\u{2501}".repeat(filled),
+                        "\u{2508}".repeat(empty),
+                        done, total_to_hash, pct);
+                }
                 hash_file_partial(path).ok().map(|h| (h, path.clone()))
             })
             .collect();
@@ -117,7 +131,6 @@ pub fn run(path: &str, min_size: u64) {
             hash_map.entry(hash).or_default().push(path);
         }
 
-        // Same hash = duplicates
         for (_, group_paths) in hash_map {
             if group_paths.len() >= 2 {
                 dupe_groups.push(DupeGroup {
@@ -128,7 +141,7 @@ pub fn run(path: &str, min_size: u64) {
         }
     }
 
-    print!("\r\x1b[K");
+    eprint!("\r\x1b[K");
     println!("  \x1b[32m\u{2713}\x1b[0m Hashed {} files\n", checked.load(Ordering::Relaxed));
 
     if dupe_groups.is_empty() {
