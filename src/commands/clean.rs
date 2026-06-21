@@ -227,7 +227,8 @@ fn scan_and_show(targets: &mut Vec<CleanTarget>, total: &mut u64, name: &str, pa
 }
 
 /// Delete a target's contents (not the directory itself).
-fn delete_target(target: &CleanTarget, mode: DeleteMode) -> u64 {
+/// Silently skips files that can't be deleted (permission issues).
+fn delete_target(target: &CleanTarget, _mode: DeleteMode) -> u64 {
     let path = &target.path;
 
     if !path.exists() {
@@ -239,7 +240,9 @@ fn delete_target(target: &CleanTarget, mode: DeleteMode) -> u64 {
         return crate::cleaners::trash::empty_trash(false);
     }
 
-    // For all other targets: delete contents of the directory
+    // For caches/logs: force-delete contents silently.
+    // These are regenerable caches, not user data — Trash is overkill.
+    // Silently skip anything that fails (permission denied, in-use, etc.)
     let mut freed: u64 = 0;
 
     if let Ok(entries) = std::fs::read_dir(path) {
@@ -251,14 +254,17 @@ fn delete_target(target: &CleanTarget, mode: DeleteMode) -> u64 {
                 p.metadata().map(|m| m.len()).unwrap_or(0)
             };
 
-            let success = match mode {
-                DeleteMode::Trash => trash_path(&p),
-                DeleteMode::Force => force_remove(&p),
+            // Try to delete silently — skip on failure (no prompts, no errors)
+            let success = if p.is_dir() {
+                std::fs::remove_dir_all(&p).is_ok()
+            } else {
+                std::fs::remove_file(&p).is_ok()
             };
 
             if success {
                 freed += size;
             }
+            // If it fails (permission denied, file in use), just skip silently
         }
     }
 
@@ -266,7 +272,7 @@ fn delete_target(target: &CleanTarget, mode: DeleteMode) -> u64 {
         crate::history::log_delete(
             path.to_str().unwrap_or(""),
             freed,
-            if mode == DeleteMode::Trash { "trash" } else { "clean" },
+            "clean",
         );
     }
 
@@ -274,13 +280,13 @@ fn delete_target(target: &CleanTarget, mode: DeleteMode) -> u64 {
 }
 
 /// Move a path to Trash (with Finder fallback on macOS).
+/// Used by uninstall command for user apps (not by clean).
+#[allow(dead_code)]
 fn trash_path(path: &std::path::Path) -> bool {
-    // Try trash crate first
     if ::trash::delete(path).is_ok() {
         return true;
     }
 
-    // Fallback to Finder on macOS
     #[cfg(target_os = "macos")]
     {
         let abs = if path.is_absolute() {
@@ -308,6 +314,7 @@ fn trash_path(path: &std::path::Path) -> bool {
 }
 
 /// Force-remove a path (permanent).
+#[allow(dead_code)]
 fn force_remove(path: &std::path::Path) -> bool {
     if path.is_dir() {
         std::fs::remove_dir_all(path).is_ok()

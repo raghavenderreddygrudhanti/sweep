@@ -78,5 +78,5 @@ fn test_version() {
         .expect("Failed to run sweep");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("0.2.0"), "Version should be 0.2.0, got: {}", stdout);
+    assert!(stdout.contains("0.3.1"), "Version should be 0.3.1, got: {}", stdout);
 }

@@ -16,15 +16,28 @@ pub fn run() {
                 total_growth: 0,
             });
         } else {
+            super::ui::print_header("\x1b[1;34m\u{1f4c8} Space Timeline\x1b[0m");
             println!("\n  No previous scan data found.");
             println!("  Run {} first to establish a baseline.\n", "sweep scan ~".bold());
+            super::ui::wait_any_key();
         }
         return;
     }
 
     // Re-scan the paths we have cached
+    if !output::is_json() {
+        super::ui::print_header("\x1b[1;34m\u{1f4c8} Space Timeline\x1b[0m");
+        print!("  \x1b[33m[scanning...]\x1b[0m");
+        let _ = std::io::Write::flush(&mut std::io::stdout());
+    }
+
     let home = dirs::home_dir().unwrap_or_default();
     let current_children = scanner::scan_children(&home);
+
+    if !output::is_json() {
+        print!("\r\x1b[K"); // Clear scanning line
+        println!();
+    }
 
     let mut changes: Vec<TimelineEntry> = Vec::new();
     let mut total_growth: i64 = 0;
@@ -73,10 +86,9 @@ pub fn run() {
     }
 
     // Human-readable output
-    println!("\n  {} Space Timeline (since last scan)\n", "\u{1f4c8}".to_string());
-
     if changes.is_empty() {
         println!("  No significant changes detected (threshold: 50 MB).\n");
+        super::ui::wait_any_key();
         return;
     }
 
@@ -113,4 +125,6 @@ pub fn run() {
         .map(|c| (c.path.clone(), c.size))
         .collect();
     cache::save_all(&new_cache);
+
+    super::ui::wait_any_key();
 }

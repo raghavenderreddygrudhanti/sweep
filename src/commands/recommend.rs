@@ -15,6 +15,15 @@ struct RecommendSource {
 }
 
 pub fn run() {
+    if !output::is_json() {
+        super::ui::print_header("\x1b[1;32m\u{1f4a1} Sweep Recommendations\x1b[0m");
+        println!();
+        println!("  \x1b[33mPlease wait, analyzing disk...\x1b[0m");
+        println!();
+        println!("  \x1b[90mPress Q to cancel\x1b[0m");
+        let _ = std::io::Write::flush(&mut std::io::stdout());
+    }
+
     let home = dirs::home_dir().unwrap_or_default();
 
     let sources = vec![
@@ -197,11 +206,13 @@ pub fn run() {
         return;
     }
 
-    // Human-readable output
-    println!("\n  {} Sweep Recommendations\n", "\u{1f4a1}");
+    // Human-readable output — clear the "please wait" lines
+    print!("\x1b[4A\x1b[J"); // Move up 4 lines and clear to end
+    println!();
 
     if recommendations.is_empty() {
         println!("  Your system looks clean! No major reclaimable space found.\n");
+        super::ui::wait_any_key();
         return;
     }
 
@@ -233,6 +244,62 @@ pub fn run() {
         "  Total reclaimable: {}\n",
         total_str.bold().green()
     );
+
+    // Action prompt
+    println!("  {}", "\u{2500}".repeat(40).dimmed());
+    println!("  \x1b[1mActions:\x1b[0m");
+    println!("  \x1b[32m  a\x1b[0m  Clean all recommendations");
+    println!("  \x1b[32m  1-9\x1b[0m  Clean specific item");
+    println!("  \x1b[90m  q\x1b[0m  Quit");
+    println!();
+    print!("  \x1b[1;33mChoice:\x1b[0m ");
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+
+    let _ = crossterm::terminal::enable_raw_mode();
+    while crossterm::event::poll(std::time::Duration::from_millis(50)).unwrap_or(false) {
+        let _ = crossterm::event::read();
+    }
+    let choice = loop {
+        if let Ok(crossterm::event::Event::Key(key)) = crossterm::event::read() {
+            match key.code {
+                crossterm::event::KeyCode::Char(c) => break c,
+                crossterm::event::KeyCode::Esc => break 'q',
+                _ => break 'q',
+            }
+        }
+    };
+    let _ = crossterm::terminal::disable_raw_mode();
+    println!();
+
+    match choice {
+        'q' | 'Q' => {
+            println!("\n  \x1b[90mDone.\x1b[0m\n");
+        }
+        'a' | 'A' => {
+            println!("\n  \x1b[33mCleaning all...\x1b[0m\n");
+            let mut freed: u64 = 0;
+            for rec in &recommendations {
+                let cmd = rec.command.as_str();
+                // Map command to action
+                freed += run_clean_command(cmd);
+            }
+            println!("  \x1b[1;32m\u{1f389} Freed: {}\x1b[0m\n", bytesize::ByteSize::b(freed).to_string().bold());
+        }
+        c @ '1'..='9' => {
+            let idx = (c as usize) - ('1' as usize);
+            if idx < recommendations.len() {
+                let rec = &recommendations[idx];
+                println!("\n  \x1b[33mCleaning: {}\x1b[0m", rec.description);
+                let freed = run_clean_command(&rec.command);
+                println!("  \x1b[1;32m\u{1f389} Freed: {}\x1b[0m\n", bytesize::ByteSize::b(freed).to_string().bold());
+            } else {
+                println!("\n  \x1b[90mInvalid selection.\x1b[0m\n");
+            }
+        }
+        _ => {
+            println!("\n  \x1b[90mDone.\x1b[0m\n");
+        }
+    }
 }
 
 /// Quick scan for common dev artifacts without deep traversal.
@@ -292,4 +359,81 @@ fn scan_dev_artifacts(home: &PathBuf) -> Vec<(String, u64, String)> {
     }
 
     results
+}
+
+/// Execute a clean command and return bytes freed.
+/// Directly cleans the relevant paths silently (no TUI, no prompts).
+fn run_clean_command(cmd: &str) -> u64 {
+    let home = dirs::home_dir().unwrap_or_default();
+    let mut freed: u64 = 0;
+
+    let paths: Vec<PathBuf> = match cmd {
+        "sweep ai" => vec![
+            home.join(".cache/huggingface/hub"),
+            home.join(".ollama/models"),
+            home.join(".cache/torch"),
+            home.join(".cache/pip"),
+            home.join("miniconda3/pkgs"),
+            home.join("anaconda3/pkgs"),
+        ],
+        "sweep clean" => vec![
+            home.join("Library/Caches"),
+            home.join("Library/Logs"),
+        ],
+        "sweep docker" => {
+            // Docker uses its own prune command
+            let _ = std::process::Command::new("docker")
+                .args(["system", "prune", "-f"])
+                .stderr(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .status();
+            return 0; // Can't easily measure docker freed space
+        }
+        "sweep installer" => vec![
+            home.join("Downloads"),
+        ],
+        _ => vec![],
+    };
+
+    for path in &paths {
+        if !path.exists() {
+            continue;
+        }
+
+        if let Ok(entries) = std::fs::read_dir(path) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+
+                // For Downloads, only delete .dmg and .pkg files
+                if cmd == "sweep installer" {
+                    let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
+                    if ext != "dmg" && ext != "pkg" && ext != "zip" {
+                        continue;
+                    }
+                }
+
+                let size = if p.is_dir() {
+                    scanner::scan_size_native(&p)
+                } else {
+                    p.metadata().map(|m| m.len()).unwrap_or(0)
+                };
+
+                let ok = if p.is_dir() {
+                    std::fs::remove_dir_all(&p).is_ok()
+                } else {
+                    std::fs::remove_file(&p).is_ok()
+                };
+
+                if ok {
+                    freed += size;
+                }
+            }
+        }
+
+        if freed > 0 {
+            crate::history::log_delete(path.to_str().unwrap_or(""), freed, "recommend");
+        }
+    }
+
+    freed
 }

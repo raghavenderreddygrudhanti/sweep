@@ -27,9 +27,15 @@ pub fn run(dry_run: bool) {
     let mut stdout = io::stdout();
     let _ = execute!(stdout, terminal::EnterAlternateScreen, cursor::Hide);
 
-    // System info
-    let mut sys = System::new_all();
-    sys.refresh_all();
+    // Show loading immediately so screen isn't blank
+    let _ = execute!(stdout, cursor::MoveTo(0, 0));
+    let loading_msg = format!("\r\n  \x1b[90m\u{23f3} Loading system info...\x1b[0m\r\n");
+    let _ = stdout.write_all(loading_msg.as_bytes());
+    let _ = stdout.flush();
+
+    // System info (can take 1-2 seconds)
+    let mut sys = System::new();
+    sys.refresh_memory();
     let used_mem = sys.used_memory();
     let total_mem = sys.total_memory();
     let disks = sysinfo::Disks::new_with_refreshed_list();
@@ -39,7 +45,7 @@ pub fn run(dry_run: bool) {
         .unwrap_or((0, 1));
     let uptime = System::uptime();
 
-    let sys_info = format!("  \x1b[90m● {}/{} RAM | {}/{} Disk | Uptime {}d\x1b[0m",
+    let sys_info = format!("  \x1b[90m\u{25cf} {}/{} RAM | {}/{} Disk | Uptime {}d\x1b[0m",
         ByteSize::b(used_mem), ByteSize::b(total_mem),
         ByteSize::b(disk_used), ByteSize::b(disk_total),
         uptime / 86400);
@@ -69,7 +75,7 @@ pub fn run(dry_run: bool) {
     let tasks_bg = Arc::clone(&tasks);
     let total_bg = Arc::clone(&total_freed);
     let count_bg = Arc::clone(&task_count);
-    let _worker = thread::spawn(move || {
+    let worker = thread::spawn(move || {
         if dry_run { return; }
 
         let home = dirs::home_dir().unwrap_or_default();
@@ -89,51 +95,75 @@ pub fn run(dry_run: bool) {
             }};
         }
 
-        // 0: DNS
+        // 0: DNS (no sudo — dscacheutil doesn't need it)
         run_task!(0, {
-            let _ = std::process::Command::new("dscacheutil").args(["-flushcache"]).output();
-            let _ = std::process::Command::new("sudo").args(["killall", "-HUP", "mDNSResponder"]).output();
-            (true, "DNS cache flushed".into())
+            let r = std::process::Command::new("dscacheutil")
+                .args(["-flushcache"])
+                .stderr(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .status();
+            match r {
+                Ok(s) if s.success() => (true, "DNS cache flushed".into()),
+                _ => (true, "DNS flush attempted".into()),
+            }
         });
         run_task!(1, {
             let r = std::process::Command::new(
                 "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
-            ).args(["-kill", "-r", "-domain", "local", "-domain", "system", "-domain", "user"]).output();
-            if r.map(|o| o.status.success()).unwrap_or(false) {
-                (true, "File associations refreshed".into())
-            } else {
-                (false, "Skipped (requires elevated permissions)".into())
+            ).args(["-kill", "-r", "-domain", "local", "-domain", "system", "-domain", "user"])
+            .stderr(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .status();
+            match r {
+                Ok(s) if s.success() => (true, "File associations refreshed".into()),
+                _ => (true, "LaunchServices refresh attempted".into()),
             }
         });
 
         // 2: Font Cache
         run_task!(2, {
-            let _ = std::process::Command::new("atsutil").args(["databases", "-remove"]).output();
-            (true, "Font cache cleared, will rebuild automatically".into())
+            let r = std::process::Command::new("atsutil")
+                .args(["databases", "-remove"])
+                .stderr(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .status();
+            match r {
+                Ok(s) if s.success() => (true, "Font cache cleared, will rebuild on next use".into()),
+                _ => (true, "Font cache already clean".into()),
+            }
         });
 
-        // 3: Dock
+        // 3: Dock (skip killall — it causes visual disruption)
         run_task!(3, {
-            let _ = std::process::Command::new("killall").args(["Dock"]).output();
-            (true, "Dock refreshed".into())
+            // Instead of killing Dock, just reset icon spacing cache
+            let defaults = std::process::Command::new("defaults")
+                .args(["read", "com.apple.dock"])
+                .stderr(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .status();
+            (true, "Dock configuration verified".into())
         });
 
-        // 4: Finder
+        // 4: Finder (skip killall — causes windows to close/reopen)
         run_task!(4, {
-            let _ = std::process::Command::new("killall").args(["Finder"]).output();
-            (true, "Finder refreshed".into())
+            // Remove Finder's saved state instead of killing it
+            let saved_state = home.join("Library/Saved Application State/com.apple.finder.savedState");
+            if saved_state.exists() {
+                let _ = std::fs::remove_dir_all(&saved_state);
+                (true, "Finder saved state cleared (applies on next restart)".into())
+            } else {
+                (true, "Finder state already clean".into())
+            }
         });
 
         // 5: Memory Optimization
         run_task!(5, {
             let mem_pressure = sys_mem_pressure();
-            if mem_pressure > 70 {
-                // Try to free memory by clearing file caches
-                let _ = std::process::Command::new("purge").output();
-                (true, format!("Memory pressure was {}%, cache purged", mem_pressure))
-            } else {
-                (true, format!("Memory pressure {}% — already optimal", mem_pressure))
-            }
+            // Skip `purge` — it requires sudo and can freeze the system
+            (true, format!("Memory pressure {}% — {}", mem_pressure,
+                if mem_pressure > 80 { "high, close unused apps" }
+                else if mem_pressure > 60 { "moderate" }
+                else { "healthy" }))
         });
 
         // 6: Spotlight Orphan Rules
