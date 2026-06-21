@@ -18,7 +18,7 @@ pub fn run(dry_run: bool, _mode: DeleteMode) {
     let _ = stdout.write_all(out.as_bytes());
     let _ = stdout.flush();
 
-    let apps_list = apps::find_installed_apps();
+    let mut apps_list = apps::find_installed_apps();
 
     if apps_list.is_empty() {
         let _ = execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show);
@@ -32,7 +32,7 @@ pub fn run(dry_run: bool, _mode: DeleteMode) {
     let max_display = 18;
 
     loop {
-        let _ = execute!(stdout, cursor::MoveTo(0, 0), terminal::Clear(terminal::ClearType::All));
+        let _ = execute!(stdout, cursor::MoveTo(0, 0));
 
         let marked_count = marked.iter().filter(|&&m| m).count();
         let marked_size: u64 = apps_list.iter().enumerate()
@@ -169,7 +169,10 @@ pub fn run(dry_run: bool, _mode: DeleteMode) {
                             }
                             let _ = event::read(); // wait for keypress
                         }
-                        break;
+                        // Refresh list after deletion
+                        apps_list = apps::find_installed_apps();
+                        marked = vec![false; apps_list.len()];
+                        selected = 0;
                     } else if selected < apps_list.len() {
                         // Single app — confirm in TUI
                         let app = &apps_list[selected];
@@ -213,18 +216,20 @@ pub fn run(dry_run: bool, _mode: DeleteMode) {
                             crate::history::log_delete(&app.path.display().to_string(), app.size, "uninstall");
 
                             let _ = stdout.write_all(format!(
-                                "  \x1b[1;32m✓ {} (+{} remnants) moved to Trash\x1b[0m\r\n\r\n  \x1b[90mPress any key to return...\x1b[0m\r\n",
+                                "  \x1b[1;32m\u{2713} {} (+{} remnants) moved to Trash\x1b[0m\r\n\r\n  \x1b[90mPress any key to continue...\x1b[0m\r\n",
                                 app.name, remnants.len()
                             ).as_bytes());
                             let _ = stdout.flush();
-                            // Drain + wait
                             std::thread::sleep(std::time::Duration::from_millis(200));
                             while event::poll(std::time::Duration::from_millis(100)).unwrap_or(false) {
                                 let _ = event::read();
                             }
                             let _ = event::read();
                         }
-                        break;
+                        // Refresh list after deletion
+                        apps_list = apps::find_installed_apps();
+                        marked = vec![false; apps_list.len()];
+                        if selected >= apps_list.len() && selected > 0 { selected -= 1; }
                     }
                 }
                 super::ui::NavAction::Back | super::ui::NavAction::Quit => break,
