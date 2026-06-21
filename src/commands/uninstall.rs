@@ -86,6 +86,7 @@ pub fn run(dry_run: bool, _mode: DeleteMode) {
         } else {
             out.push_str(super::ui::footer_list());
         }
+        out.push_str("\x1b[J"); // Clear rest of screen
 
         let _ = stdout.write_all(out.as_bytes());
         let _ = stdout.flush();
