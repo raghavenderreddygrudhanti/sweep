@@ -40,7 +40,12 @@ pub fn run() {
             super::ui::spinner(check_count), source.description);
         let _ = std::io::Write::flush(&mut std::io::stdout());
 
-        let size = scanner::scan_size_native(&source.path);
+        // For Downloads, only count installer files (.dmg, .pkg, .zip)
+        let size = if source.command == "sweep installer" {
+            scan_installer_size(&source.path)
+        } else {
+            scanner::scan_size_native(&source.path)
+        };
         let size_mb = size / (1024 * 1024);
 
         if size_mb >= source.min_size_mb {
@@ -258,4 +263,21 @@ fn run_clean_command(cmd: &str) -> u64 {
         crate::history::log_delete("recommend", freed, "clean");
     }
     freed
+}
+
+/// Only count .dmg, .pkg, .zip files in a directory (not everything).
+fn scan_installer_size(path: &std::path::Path) -> u64 {
+    let mut total: u64 = 0;
+    if let Ok(entries) = std::fs::read_dir(path) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_file() {
+                let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
+                if ext == "dmg" || ext == "pkg" || ext == "zip" || ext == "iso" || ext == "app" {
+                    total += p.metadata().map(|m| m.len()).unwrap_or(0);
+                }
+            }
+        }
+    }
+    total
 }
