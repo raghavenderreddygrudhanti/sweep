@@ -95,9 +95,9 @@ pub fn run() {
 
     // Read choice
     let _ = crossterm::terminal::enable_raw_mode();
-    // Drain all buffered events (from scrolling, mouse, etc.)
-    std::thread::sleep(std::time::Duration::from_millis(200));
-    while crossterm::event::poll(std::time::Duration::from_millis(100)).unwrap_or(false) {
+    // Drain all buffered events (from menu Enter key, scrolling, etc.)
+    std::thread::sleep(std::time::Duration::from_millis(400));
+    while crossterm::event::poll(std::time::Duration::from_millis(150)).unwrap_or(false) {
         let _ = crossterm::event::read();
     }
     let choice = loop {
