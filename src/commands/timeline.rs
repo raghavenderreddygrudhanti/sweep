@@ -16,16 +16,20 @@ pub fn run() {
                 total_growth: 0,
             });
         } else {
+            print!("\x1b[2J\x1b[H");
+            let _ = std::io::Write::flush(&mut std::io::stdout());
             super::ui::print_header("\x1b[1;34m\u{1f4c8} Space Timeline\x1b[0m");
             println!("\n  No previous scan data found.");
             println!("  Run {} first to establish a baseline.\n", "sweep scan ~".bold());
-
         }
         return;
     }
 
     // Only rescan large cached paths in parallel (skip tiny ones for speed)
     if !output::is_json() {
+        // Clear screen for a fresh view
+        print!("\x1b[2J\x1b[H");
+        let _ = std::io::Write::flush(&mut std::io::stdout());
         super::ui::print_header("\x1b[1;34m\u{1f4c8} Space Timeline\x1b[0m");
     }
 

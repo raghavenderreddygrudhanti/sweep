@@ -6,6 +6,10 @@ use crate::cleaners::ai;
 use crate::cleaners::DeleteMode;
 
 pub fn run(dry_run: bool, mode: DeleteMode) {
+    // Clear screen for a fresh view
+    print!("\x1b[2J\x1b[H");
+    let _ = io::stdout().flush();
+
     let dry_label = if dry_run { " (preview)" } else { "" };
     super::ui::print_header(&format!("\x1b[1;35m\u{1f916} AI/ML Cache Clean\x1b[0m{}", dry_label));
 

@@ -15,6 +15,10 @@ struct CleanTarget {
 }
 
 pub fn run(dry_run: bool, mode: DeleteMode) {
+    // Clear screen for a fresh view
+    print!("\x1b[2J\x1b[H");
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+
     super::ui::print_header("\x1b[1;35m\u{1f9f9} clean\x1b[0m");
 
     let home = crate::error::home_or_exit();
