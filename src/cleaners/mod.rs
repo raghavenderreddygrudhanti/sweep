@@ -4,6 +4,7 @@ pub mod system;
 pub mod dev;
 pub mod ai;
 pub mod docker;
+pub mod comprehensive;
 pub mod browser;
 pub mod apps;
 pub mod trash;
@@ -12,6 +13,7 @@ pub mod xcode;
 pub mod jetbrains;
 pub mod apps_cache;
 pub mod homebrew;
+pub mod orphans;
 
 use std::path::Path;
 use std::fs;

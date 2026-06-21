@@ -5,9 +5,7 @@ use bytesize::ByteSize;
 
 const MENU: &[(&str, &str, &str)] = &[
     // (label, description, color)
-    ("clean",     "Free up disk space",                 "\x1b[32m"),
-    ("AI/ML",     "Clean model & package caches",       "\x1b[35m"),
-    ("Dev",       "Remove old build artifacts",         "\x1b[36m"),
+    ("Clean",     "Free up disk space (all categories)","\x1b[32m"),
     ("Uninstall", "Remove apps and leftover files",     "\x1b[33m"),
     ("Analyze",   "Explore disk usage",                 "\x1b[34m"),
     ("Optimize",  "Refresh system caches & services",   "\x1b[32m"),
@@ -89,8 +87,6 @@ pub fn run() {
                     super::ui::NavAction::Char('5') => { selected = 4; }
                     super::ui::NavAction::Char('6') => { selected = 5; }
                     super::ui::NavAction::Char('7') => { selected = 6; }
-                    super::ui::NavAction::Char('8') => { selected = 7; }
-                    super::ui::NavAction::Char('9') => { selected = 8; }
                     super::ui::NavAction::Back | super::ui::NavAction::Quit => {
                         break;
                     }
@@ -117,14 +113,12 @@ fn run_selected(idx: usize) {
     use crate::cleaners::DeleteMode;
     match idx {
         0 => super::clean::run(false, DeleteMode::Trash),
-        1 => super::ai::run(false, DeleteMode::Trash),
-        2 => super::dev::run(false, 7, DeleteMode::Trash),
-        3 => super::uninstall::run(false, DeleteMode::Trash),
-        4 => super::scan::run("~"),
-        5 => super::optimize::run(false),
-        6 => super::recommend::run(),
-        7 => super::timeline::run(),
-        8 => super::status::run(),
+        1 => super::uninstall::run(false, DeleteMode::Trash),
+        2 => super::scan::run("~"),
+        3 => super::optimize::run(false),
+        4 => super::recommend::run(),
+        5 => super::timeline::run(),
+        6 => super::status::run(),
         _ => {}
     }
 }
