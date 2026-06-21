@@ -285,8 +285,11 @@ pub fn run(path: &str) {
         let _ = stdout.write_all(out.as_bytes());
         let _ = stdout.flush();
 
-        // Input with timeout (shorter timeout = faster Esc detection)
-        if event::poll(std::time::Duration::from_millis(100)).unwrap_or(false) {
+        // Input — block until key press or 50ms timeout for scan updates
+        let scanning = categories.iter().any(|c| c.size < 0);
+        let timeout = if scanning { std::time::Duration::from_millis(50) } else { std::time::Duration::from_millis(1000) };
+        
+        if event::poll(timeout).unwrap_or(false) {
             if let Ok(Event::Key(key)) = event::read() {
                 // Always allow q and Ctrl+C to quit immediately
                 if key.code == crossterm::event::KeyCode::Char('q')
