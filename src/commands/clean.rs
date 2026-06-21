@@ -6,44 +6,58 @@ use crossterm::event::{Event, KeyCode};
 use crate::scanner;
 use crate::cleaners::DeleteMode;
 
-pub fn run(_dry_run: bool, _mode: DeleteMode) {
+/// A cleanable item with its path, description, and scanned size.
+struct CleanTarget {
+    name: String,
+    path: PathBuf,
+    size: u64,
+    item_count: usize,
+}
+
+pub fn run(dry_run: bool, mode: DeleteMode) {
     super::ui::print_header("\x1b[1;35mClean Your Mac\x1b[0m");
 
     let home = dirs::home_dir().unwrap_or_default();
-    let mut total_freed: u64 = 0;
+
+    // Collect all targets with their sizes
+    let mut targets: Vec<CleanTarget> = Vec::new();
+    let mut total: u64 = 0;
 
     // ─── System ────────────────────────────────────────────
     println!("  \x1b[1;32m▸ System\x1b[0m");
-    total_freed += clean_item("System crash reports", &home.join("Library/Logs/DiagnosticReports"), true);
-    total_freed += clean_item("System logs", &PathBuf::from("/var/log"), true);
-    total_freed += clean_item("System diagnostic logs", &home.join("Library/Logs"), true);
-    total_freed += clean_item("Power logs", &home.join("Library/Logs/powermanagement"), true);
+    scan_and_show(&mut targets, &mut total, "System crash reports", &home.join("Library/Logs/DiagnosticReports"));
+    scan_and_show(&mut targets, &mut total, "System logs", &home.join("Library/Logs"));
     println!();
 
     // ─── User essentials ───────────────────────────────────
     println!("  \x1b[1;32m▸ User essentials\x1b[0m");
-    total_freed += clean_item("User app cache", &home.join("Library/Caches"), true);
-    total_freed += clean_item("User app logs", &home.join("Library/Logs"), true);
+    scan_and_show(&mut targets, &mut total, "User app cache", &home.join("Library/Caches"));
 
     let trash = home.join(".Trash");
-    let trash_size = scanner::scan_size(&trash).0;
+    let trash_size = scanner::scan_size_native(&trash);
     if trash_size > 0 {
-        println!("    ✓ Trash, \x1b[32m{}\x1b[0m", ByteSize::b(trash_size));
-        // trash cleaned in actual_clean()
-        total_freed += trash_size;
+        println!("    \u{2713} Trash, \x1b[32m{}\x1b[0m", ByteSize::b(trash_size));
+        targets.push(CleanTarget {
+            name: "Trash".to_string(),
+            path: trash,
+            size: trash_size,
+            item_count: 0,
+        });
+        total += trash_size;
     } else {
-        println!("    ✓ Trash · already empty");
+        println!("    \u{2713} Trash \u{b7} already empty");
     }
     println!();
 
     // ─── App caches ────────────────────────────────────────
     println!("  \x1b[1;32m▸ App caches\x1b[0m");
     let app_caches = crate::cleaners::apps_cache::app_cache_paths();
-    for (path, name) in &app_caches {
-        total_freed += clean_item(name, path, true);
-    }
     if app_caches.is_empty() {
-        println!("    ✓ Nothing to clean");
+        println!("    \u{2713} Nothing to clean");
+    } else {
+        for (path, name) in &app_caches {
+            scan_and_show(&mut targets, &mut total, name, path);
+        }
     }
     println!();
 
@@ -52,35 +66,41 @@ pub fn run(_dry_run: bool, _mode: DeleteMode) {
     let browsers = crate::cleaners::browser::browser_cache_paths();
     let mut any_browser = false;
     for (path, name) in &browsers {
-        let size = scanner::scan_size(path).0;
+        let size = scanner::scan_size_native(path);
         if size > 100_000 {
-            println!("    ✓ {}, \x1b[32m{}\x1b[0m", name, ByteSize::b(size));
-            // cleaned in actual_clean()
-            total_freed += size;
+            let count = std::fs::read_dir(path).map(|d| d.count()).unwrap_or(0);
+            println!("    \u{2713} {}, \x1b[32m{}\x1b[0m", name, ByteSize::b(size));
+            targets.push(CleanTarget {
+                name: name.to_string(),
+                path: path.clone(),
+                size,
+                item_count: count,
+            });
+            total += size;
             any_browser = true;
         }
     }
     if !any_browser {
-        println!("    ✓ Nothing to clean");
+        println!("    \u{2713} Nothing to clean");
     }
     println!();
 
     // ─── Developer tools ───────────────────────────────────
     println!("  \x1b[1;32m▸ Developer tools\x1b[0m");
-    total_freed += clean_item("npm cache", &home.join(".npm/_cacache"), true);
-    total_freed += clean_item("pip cache", &home.join("Library/Caches/pip"), true);
-    total_freed += clean_item("Cargo registry cache", &home.join(".cargo/registry/cache"), true);
-    total_freed += clean_item("Go build cache", &home.join("Library/Caches/go-build"), true);
-    total_freed += clean_item("Gradle cache", &home.join(".gradle/caches"), true);
-    total_freed += clean_item("Maven cache", &home.join(".m2/repository"), true);
-    total_freed += clean_item("CocoaPods cache", &home.join("Library/Caches/CocoaPods"), true);
+    scan_and_show(&mut targets, &mut total, "npm cache", &home.join(".npm/_cacache"));
+    scan_and_show(&mut targets, &mut total, "pip cache", &home.join("Library/Caches/pip"));
+    scan_and_show(&mut targets, &mut total, "Cargo registry cache", &home.join(".cargo/registry/cache"));
+    scan_and_show(&mut targets, &mut total, "Go build cache", &home.join("Library/Caches/go-build"));
+    scan_and_show(&mut targets, &mut total, "Gradle cache", &home.join(".gradle/caches"));
+    scan_and_show(&mut targets, &mut total, "Maven cache", &home.join(".m2/repository"));
+    scan_and_show(&mut targets, &mut total, "CocoaPods cache", &home.join("Library/Caches/CocoaPods"));
     println!();
 
     // ─── AI/ML ─────────────────────────────────────────────
     println!("  \x1b[1;32m▸ AI/ML\x1b[0m");
-    total_freed += clean_item("HuggingFace cache", &home.join(".cache/huggingface"), true);
-    total_freed += clean_item("Ollama models", &home.join(".ollama/models"), true);
-    total_freed += clean_item("PyTorch cache", &home.join(".cache/torch"), true);
+    scan_and_show(&mut targets, &mut total, "HuggingFace cache", &home.join(".cache/huggingface"));
+    scan_and_show(&mut targets, &mut total, "Ollama models", &home.join(".ollama/models"));
+    scan_and_show(&mut targets, &mut total, "PyTorch cache", &home.join(".cache/torch"));
     println!();
 
     // ─── Xcode ─────────────────────────────────────────────
@@ -88,7 +108,7 @@ pub fn run(_dry_run: bool, _mode: DeleteMode) {
     if !xcode_paths.is_empty() {
         println!("  \x1b[1;32m▸ Xcode\x1b[0m");
         for (path, name) in &xcode_paths {
-            total_freed += clean_item(name, path, true);
+            scan_and_show(&mut targets, &mut total, name, path);
         }
         println!();
     }
@@ -98,7 +118,7 @@ pub fn run(_dry_run: bool, _mode: DeleteMode) {
     if !jb_paths.is_empty() {
         println!("  \x1b[1;32m▸ JetBrains\x1b[0m");
         for (path, name) in &jb_paths {
-            total_freed += clean_item(name, path, true);
+            scan_and_show(&mut targets, &mut total, name, path);
         }
         println!();
     }
@@ -108,133 +128,190 @@ pub fn run(_dry_run: bool, _mode: DeleteMode) {
         println!("  \x1b[1;32m▸ Homebrew\x1b[0m");
         let brew_size = crate::cleaners::homebrew::brew_cleanup(true);
         if brew_size > 0 {
-            println!("    ✓ Homebrew cache, \x1b[32m{}\x1b[0m", ByteSize::b(brew_size));
-            total_freed += brew_size;
+            println!("    \u{2713} Homebrew cache, \x1b[32m{}\x1b[0m", ByteSize::b(brew_size));
+            total += brew_size;
+            // Homebrew is handled separately via `brew cleanup`
         } else {
-            println!("    ✓ Already clean");
+            println!("    \u{2713} Already clean");
         }
         println!();
     }
 
     // ─── Summary ───────────────────────────────────────────
-    println!("  ═══════════════════════════════════════════════");
-    if total_freed > 0 {
-        println!("  \x1b[1;32mWould free: {}\x1b[0m", ByteSize::b(total_freed));
-        println!("  ═══════════════════════════════════════════════");
-        println!();
+    println!("  \u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}");
 
-        // Ask for confirmation
-        print!("  \x1b[1;33mClean now? (y/n):\x1b[0m ");
-        let _ = io::stdout().flush();
-
-        let _ = terminal::enable_raw_mode();
-        // Drain any buffered events from scrolling output
-        std::thread::sleep(std::time::Duration::from_millis(150));
-        while event::poll(std::time::Duration::from_millis(50)).unwrap_or(false) {
-            let _ = event::read();
-        }
-        let proceed = loop {
-            if let Ok(Event::Key(key)) = event::read() {
-                match key.code {
-                    KeyCode::Char('y') | KeyCode::Char('Y') => break true,
-                    _ => break false,
-                }
-            }
-        };
-        let _ = terminal::disable_raw_mode();
-        println!();
-
-        if proceed {
-            println!("\n  {}", super::ui::action_name("clean"));
-            // Actually delete everything
-            actual_clean();
-            println!("  \x1b[1;32m🎉 Done! Reclaimed: {}\x1b[0m", ByteSize::b(total_freed));
-        } else {
-            println!("\n  \x1b[90mCancelled.\x1b[0m");
-        }
-    } else {
-        println!("  \x1b[32m✓ System already clean\x1b[0m");
-        println!("  ═══════════════════════════════════════════════");
+    if total == 0 {
+        println!("  \x1b[32m\u{2713} System already clean\x1b[0m");
+        println!("  \u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}");
+        super::ui::wait_any_key();
+        return;
     }
 
-    super::ui::wait_any_key();
-}
+    if dry_run {
+        println!("  \x1b[1;33mWould free: {} (dry run — nothing deleted)\x1b[0m", ByteSize::b(total));
+        println!("  \u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}");
+        println!("\n  \x1b[90mRun without --dry-run to actually clean.\x1b[0m");
+        super::ui::wait_any_key();
+        return;
+    }
 
-/// Actually delete all cleanable items.
-fn actual_clean() {
-    let home = dirs::home_dir().unwrap_or_default();
+    // Not dry run — ask for confirmation
+    println!("  \x1b[1;32mWould free: {}\x1b[0m", ByteSize::b(total));
+    println!("  \u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}");
+    println!();
 
-    let paths_to_clean: Vec<PathBuf> = vec![
-        home.join("Library/Logs/DiagnosticReports"),
-        home.join("Library/Logs"),
-        home.join("Library/Caches"),
-    ];
+    print!("  \x1b[1;33mClean now? (y/n):\x1b[0m ");
+    let _ = io::stdout().flush();
 
-    for path in &paths_to_clean {
-        if path.exists() {
-            if let Ok(entries) = std::fs::read_dir(path) {
-                for entry in entries.flatten() {
-                    let p = entry.path();
-                    if p.is_dir() { let _ = std::fs::remove_dir_all(&p); }
-                    else { let _ = std::fs::remove_file(&p); }
-                }
+    let _ = terminal::enable_raw_mode();
+    std::thread::sleep(std::time::Duration::from_millis(150));
+    while event::poll(std::time::Duration::from_millis(50)).unwrap_or(false) {
+        let _ = event::read();
+    }
+    let proceed = loop {
+        if let Ok(Event::Key(key)) = event::read() {
+            match key.code {
+                KeyCode::Char('y') | KeyCode::Char('Y') => break true,
+                _ => break false,
             }
         }
+    };
+    let _ = terminal::disable_raw_mode();
+    println!();
+
+    if !proceed {
+        println!("\n  \x1b[90mCancelled.\x1b[0m");
+        super::ui::wait_any_key();
+        return;
     }
 
-    // Browser caches
-    let browsers = crate::cleaners::browser::browser_cache_paths();
-    for (path, _) in &browsers {
-        let _ = std::fs::remove_dir_all(path);
+    // Actually delete everything
+    println!("\n  {}", super::ui::action_name("clean"));
+    let mut actually_freed: u64 = 0;
+
+    for target in &targets {
+        let freed = delete_target(target, mode);
+        actually_freed += freed;
     }
 
-    // App caches
-    let app_caches = crate::cleaners::apps_cache::app_cache_paths();
-    for (path, _) in &app_caches {
-        let _ = std::fs::remove_dir_all(path);
-    }
-
-    // Trash
-    crate::cleaners::trash::empty_trash(false);
-
-    // Homebrew
+    // Homebrew (uses its own cleanup command)
     if crate::cleaners::homebrew::brew_cache_path().is_some() {
         crate::cleaners::homebrew::brew_cleanup(false);
     }
+
+    println!("  \x1b[1;32m\u{1f389} Done! Reclaimed: {}\x1b[0m", ByteSize::b(actually_freed));
+    super::ui::wait_any_key();
 }
-/// Clean a single path and show result inline.
-fn clean_item(name: &str, path: &PathBuf, dry_run: bool) -> u64 {
+
+/// Scan a path, display its size, and add to targets if non-empty.
+fn scan_and_show(targets: &mut Vec<CleanTarget>, total: &mut u64, name: &str, path: &PathBuf) {
+    if !path.exists() {
+        return;
+    }
+
+    let size = scanner::scan_size_native(path);
+    if size < 1000 {
+        return;
+    }
+
+    let count = std::fs::read_dir(path).map(|d| d.count()).unwrap_or(0);
+    println!("    \u{2713} {} {} items, \x1b[32m{}\x1b[0m", name, count, ByteSize::b(size));
+
+    targets.push(CleanTarget {
+        name: name.to_string(),
+        path: path.clone(),
+        size,
+        item_count: count,
+    });
+    *total += size;
+}
+
+/// Delete a target's contents (not the directory itself).
+fn delete_target(target: &CleanTarget, mode: DeleteMode) -> u64 {
+    let path = &target.path;
+
     if !path.exists() {
         return 0;
     }
 
-    let size = scanner::scan_size(path).0;
-    if size < 1000 {
-        // Too small to mention
-        return 0;
+    // Special case: Trash — use the trash cleaner
+    if target.name == "Trash" {
+        return crate::cleaners::trash::empty_trash(false);
     }
 
-    let count = std::fs::read_dir(path).map(|d| d.count()).unwrap_or(0);
+    // For all other targets: delete contents of the directory
+    let mut freed: u64 = 0;
 
-    if size > 0 {
-        println!("    ✓ {} {} items, \x1b[32m{}\x1b[0m", name, count, ByteSize::b(size));
-        if !dry_run {
-            // Don't delete the parent dir, just contents
-            if let Ok(entries) = std::fs::read_dir(path) {
-                for entry in entries.flatten() {
-                    let p = entry.path();
-                    if p.is_dir() {
-                        let _ = std::fs::remove_dir_all(&p);
-                    } else {
-                        let _ = std::fs::remove_file(&p);
-                    }
-                }
+    if let Ok(entries) = std::fs::read_dir(path) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            let size = if p.is_dir() {
+                scanner::scan_size_native(&p)
+            } else {
+                p.metadata().map(|m| m.len()).unwrap_or(0)
+            };
+
+            let success = match mode {
+                DeleteMode::Trash => trash_path(&p),
+                DeleteMode::Force => force_remove(&p),
+            };
+
+            if success {
+                freed += size;
             }
-            crate::history::log_delete(path.to_str().unwrap_or(""), size, "clean");
         }
-    } else {
-        println!("    ✓ {} · nothing to clean", name);
     }
 
-    size
+    if freed > 0 {
+        crate::history::log_delete(
+            path.to_str().unwrap_or(""),
+            freed,
+            if mode == DeleteMode::Trash { "trash" } else { "clean" },
+        );
+    }
+
+    freed
+}
+
+/// Move a path to Trash (with Finder fallback on macOS).
+fn trash_path(path: &std::path::Path) -> bool {
+    // Try trash crate first
+    if ::trash::delete(path).is_ok() {
+        return true;
+    }
+
+    // Fallback to Finder on macOS
+    #[cfg(target_os = "macos")]
+    {
+        let abs = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            std::env::current_dir().unwrap_or_default().join(path)
+        };
+        let script = format!(
+            "tell application \"Finder\" to delete POSIX file \"{}\"",
+            abs.display()
+        );
+        std::process::Command::new("osascript")
+            .args(["-e", &script])
+            .stderr(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
+
+/// Force-remove a path (permanent).
+fn force_remove(path: &std::path::Path) -> bool {
+    if path.is_dir() {
+        std::fs::remove_dir_all(path).is_ok()
+    } else {
+        std::fs::remove_file(path).is_ok()
+    }
 }
