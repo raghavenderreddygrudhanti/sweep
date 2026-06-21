@@ -38,12 +38,6 @@ fn pick_folders() -> Vec<PathBuf> {
     println!("  \x1b[1mSelect folders to scan for duplicates:\x1b[0m\n");
 
     let mut selected = vec![false; options.len()];
-    // Pre-select Documents and Downloads
-    for (i, (label, _)) in options.iter().enumerate() {
-        if *label == "Documents" || *label == "Downloads" {
-            selected[i] = true;
-        }
-    }
 
     for (i, (label, _)) in options.iter().enumerate() {
         let mark = if selected[i] { "\x1b[32m\u{25cf}\x1b[0m" } else { "\x1b[90m\u{25cb}\x1b[0m" };
