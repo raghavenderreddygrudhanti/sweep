@@ -84,9 +84,9 @@ fn pick_folders() -> Vec<PathBuf> {
                         print!("\x1b[{}A\r", options.len() + 3);
                         for (i, (label, _)) in options.iter().enumerate() {
                             let mark = if selected[i] { "\x1b[32m\u{25cf}\x1b[0m" } else { "\x1b[90m\u{25cb}\x1b[0m" };
-                            print!("\x1b[2K    {} {}. {}\n", mark, i + 1, label);
+                            print!("\x1b[2K    {} {}. {}\r\n", mark, i + 1, label);
                         }
-                        print!("\x1b[2K\n\x1b[2K  \x1b[90mPress 1-{} to toggle, Enter to start, q to cancel\x1b[0m\n", options.len());
+                        print!("\x1b[2K\r\n\x1b[2K  \x1b[90mPress 1-{} to toggle, Enter to start, q to cancel\x1b[0m\r\n", options.len());
                         print!("\x1b[2K  \x1b[1;33mChoice:\x1b[0m ");
                         let _ = io::stdout().flush();
                     }
