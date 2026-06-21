@@ -16,32 +16,108 @@ pub mod homebrew;
 use std::path::Path;
 use std::fs;
 
-/// Safely remove a directory. Returns bytes freed.
-pub fn remove_dir(path: &Path, dry_run: bool) -> u64 {
-    use crate::scanner;
+use crate::error::{SweepError, SweepResult};
+use crate::history;
 
-    let size = scanner::scan_size(path).0;
-
-    if !dry_run {
-        if let Err(e) = fs::remove_dir_all(path) {
-            eprintln!("  ⚠ Failed to remove {}: {}", path.display(), e);
-            return 0;
-        }
-    }
-
-    size
+/// Deletion mode: Trash (recoverable) or Force (permanent).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DeleteMode {
+    /// Move to system Trash (default, recoverable via Finder/file manager)
+    Trash,
+    /// Permanently delete (irreversible, use with --force)
+    Force,
 }
 
-/// Safely remove a file. Returns bytes freed.
-pub fn remove_file(path: &Path, dry_run: bool) -> u64 {
-    let size = path.metadata().map(|m| m.len()).unwrap_or(0);
+/// Remove a directory. Returns bytes freed.
+/// Default behavior: moves to Trash. With Force mode: permanent deletion.
+pub fn remove_dir(path: &Path, dry_run: bool, mode: DeleteMode) -> u64 {
+    let size = crate::scanner::scan_size_native(path);
 
-    if !dry_run {
-        if let Err(e) = fs::remove_file(path) {
-            eprintln!("  ⚠ Failed to remove {}: {}", path.display(), e);
-            return 0;
-        }
+    if dry_run || size == 0 {
+        return size;
     }
 
-    size
+    let result = match mode {
+        DeleteMode::Trash => trash_delete(path),
+        DeleteMode::Force => force_remove_dir(path),
+    };
+
+    match result {
+        Ok(()) => {
+            history::log_delete(
+                &path.display().to_string(),
+                size,
+                if mode == DeleteMode::Trash { "trash" } else { "delete" },
+            );
+            size
+        }
+        Err(e) => {
+            eprintln!("  \u{26a0} {}", e);
+            0
+        }
+    }
+}
+
+/// Remove a file. Returns bytes freed.
+/// Default behavior: moves to Trash. With Force mode: permanent deletion.
+pub fn remove_file(path: &Path, dry_run: bool, mode: DeleteMode) -> u64 {
+    let size = path.metadata().map(|m| m.len()).unwrap_or(0);
+
+    if dry_run || size == 0 {
+        return size;
+    }
+
+    let result = match mode {
+        DeleteMode::Trash => trash_delete(path),
+        DeleteMode::Force => force_remove_file(path),
+    };
+
+    match result {
+        Ok(()) => {
+            history::log_delete(
+                &path.display().to_string(),
+                size,
+                if mode == DeleteMode::Trash { "trash" } else { "delete" },
+            );
+            size
+        }
+        Err(e) => {
+            eprintln!("  \u{26a0} {}", e);
+            0
+        }
+    }
+}
+
+/// Convenience: remove_dir with default Trash mode (backward-compatible API).
+pub fn remove_dir_safe(path: &Path, dry_run: bool) -> u64 {
+    remove_dir(path, dry_run, DeleteMode::Trash)
+}
+
+/// Convenience: remove_file with default Trash mode (backward-compatible API).
+pub fn remove_file_safe(path: &Path, dry_run: bool) -> u64 {
+    remove_file(path, dry_run, DeleteMode::Trash)
+}
+
+/// Move a path to the system Trash (recoverable).
+fn trash_delete(path: &Path) -> SweepResult<()> {
+    ::trash::delete(path).map_err(|e| SweepError::Trash {
+        path: path.to_path_buf(),
+        reason: e.to_string(),
+    })
+}
+
+/// Permanently remove a directory (irreversible).
+fn force_remove_dir(path: &Path) -> SweepResult<()> {
+    fs::remove_dir_all(path).map_err(|e| SweepError::Io {
+        path: path.to_path_buf(),
+        source: e,
+    })
+}
+
+/// Permanently remove a file (irreversible).
+fn force_remove_file(path: &Path) -> SweepResult<()> {
+    fs::remove_file(path).map_err(|e| SweepError::Io {
+        path: path.to_path_buf(),
+        source: e,
+    })
 }

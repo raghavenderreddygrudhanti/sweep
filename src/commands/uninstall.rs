@@ -3,8 +3,9 @@ use bytesize::ByteSize;
 use crossterm::{terminal, cursor, execute, event};
 use crossterm::event::Event;
 use crate::cleaners::apps;
+use crate::cleaners::DeleteMode;
 
-pub fn run(dry_run: bool) {
+pub fn run(dry_run: bool, _mode: DeleteMode) {
     // Go straight to TUI — scan in background
     let _ = terminal::enable_raw_mode();
     let mut stdout = io::stdout();

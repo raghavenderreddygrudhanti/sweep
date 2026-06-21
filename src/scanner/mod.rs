@@ -1,14 +1,13 @@
 //! Parallel filesystem scanner.
-//! Uses a single `du` call for batch sizing + Rust walkdir for drill-down.
+//! Pure Rust implementation using walkdir + rayon. No subprocess calls.
 
-use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use rayon::prelude::*;
 use walkdir::WalkDir;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct ScanResult {
     pub path: String,
     pub size: u64,
@@ -16,37 +15,73 @@ pub struct ScanResult {
     pub is_dir: bool,
 }
 
-/// Get size of a single path using `du -sk`.
-pub fn scan_size(path: &Path) -> (u64, u64) {
-    (du_single(path), 0)
+// --- System directories to skip during scanning ---
+const SKIP_DIRS: &[&str] = &[
+    ".Spotlight-V100",
+    ".fseventsd",
+    ".DocumentRevisions-V100",
+    ".Trashes",
+    ".vol",
+    "cores",
+];
+
+/// Pure-Rust directory size calculation using parallel walkdir.
+/// Returns total bytes for a path (file or directory).
+pub fn scan_size_native(path: &Path) -> u64 {
+    if path.is_file() {
+        return path.metadata().map(|m| m.len()).unwrap_or(0);
+    }
+
+    if !path.exists() {
+        return 0;
+    }
+
+    let total = AtomicU64::new(0);
+
+    WalkDir::new(path)
+        .into_iter()
+        .par_bridge()
+        .filter_map(|e| e.ok())
+        .for_each(|entry| {
+            if entry.file_type().is_file() {
+                let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                total.fetch_add(size, Ordering::Relaxed);
+            }
+        });
+
+    total.load(Ordering::Relaxed)
 }
 
-/// Scan all top-level children using ONE `du` call (batch — fast).
-/// This is the key optimization: one subprocess instead of N.
-pub fn scan_children(path: &Path) -> Vec<ScanResult> {
-    // Single `du -skc` on the parent gets all children in one call
-    let sizes = du_batch(path);
+/// Legacy API — kept for backward compatibility.
+pub fn scan_size(path: &Path) -> (u64, u64) {
+    (scan_size_native(path), 0)
+}
 
-    let mut results: Vec<ScanResult> = std::fs::read_dir(path)
-        .into_iter()
-        .flatten()
-        .filter_map(|e| e.ok())
+/// Scan all top-level children of a directory in parallel.
+/// Returns sorted results (largest first).
+pub fn scan_children(path: &Path) -> Vec<ScanResult> {
+    let entries: Vec<_> = match std::fs::read_dir(path) {
+        Ok(rd) => rd.filter_map(|e| e.ok()).collect(),
+        Err(_) => return Vec::new(),
+    };
+
+    let mut results: Vec<ScanResult> = entries
+        .par_iter()
         .filter_map(|entry| {
             let p = entry.path();
             let name = p.file_name()?.to_string_lossy().to_string();
 
-            // Skip system junk
-            if name == ".Spotlight-V100" || name == ".fseventsd"
-                || name == ".DocumentRevisions-V100" || name == ".Trashes"
-                || name == ".vol" || name == "cores" {
+            // Skip system/hidden junk directories
+            if SKIP_DIRS.contains(&name.as_str()) {
                 return None;
             }
 
             let is_dir = p.is_dir();
-            let size = if is_dir {
-                sizes.get(&name).copied().unwrap_or(0)
+            let (size, file_count) = if is_dir {
+                scan_dir_stats(&p)
             } else {
-                p.metadata().map(|m| m.len()).unwrap_or(0)
+                let s = p.metadata().map(|m| m.len()).unwrap_or(0);
+                (s, 1)
             };
 
             if size == 0 && is_dir {
@@ -56,7 +91,7 @@ pub fn scan_children(path: &Path) -> Vec<ScanResult> {
             Some(ScanResult {
                 path: p.display().to_string(),
                 size,
-                file_count: 0,
+                file_count,
                 is_dir,
             })
         })
@@ -66,85 +101,27 @@ pub fn scan_children(path: &Path) -> Vec<ScanResult> {
     results
 }
 
-/// Batch `du` — runs `du -sk` on entries inside dir to get all child sizes.
-/// Returns HashMap<filename, bytes>.
-fn du_batch(dir: &Path) -> HashMap<String, u64> {
-    let mut map = HashMap::new();
+/// Scan a directory and return (total_size, file_count).
+fn scan_dir_stats(path: &Path) -> (u64, u64) {
+    let size = AtomicU64::new(0);
+    let count = AtomicU64::new(0);
 
-    // Read dir entries and batch them into du calls
-    let entries: Vec<_> = std::fs::read_dir(dir)
+    WalkDir::new(path)
         .into_iter()
-        .flatten()
+        .par_bridge()
         .filter_map(|e| e.ok())
-        .map(|e| e.path())
-        .filter(|p| p.is_dir())
-        .collect();
-
-    if entries.is_empty() {
-        return map;
-    }
-
-    // Run du -sk on all entries at once (pass paths as arguments)
-    // Chunk into groups of 50 to avoid arg limit
-    for chunk in entries.chunks(50) {
-        let mut cmd = std::process::Command::new("du");
-        cmd.arg("-sk");
-        for path in chunk {
-            cmd.arg(path);
-        }
-        cmd.stderr(std::process::Stdio::null());
-
-        if let Ok(output) = cmd.output() {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                for line in stdout.lines() {
-                    let mut parts = line.splitn(2, '\t');
-                    if let (Some(size_str), Some(path_str)) = (parts.next(), parts.next()) {
-                        if let Ok(kb) = size_str.trim().parse::<u64>() {
-                            let name = Path::new(path_str)
-                                .file_name()
-                                .unwrap_or_default()
-                                .to_string_lossy()
-                                .to_string();
-                            if !name.is_empty() {
-                                map.insert(name, kb * 1024);
-                            }
-                        }
-                    }
-                }
+        .for_each(|entry| {
+            if entry.file_type().is_file() {
+                let s = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                size.fetch_add(s, Ordering::Relaxed);
+                count.fetch_add(1, Ordering::Relaxed);
             }
-        }
-    }
+        });
 
-    map
+    (size.load(Ordering::Relaxed), count.load(Ordering::Relaxed))
 }
 
-/// Single path du (for individual items in overview).
-fn du_single(path: &Path) -> u64 {
-    if path.is_file() {
-        return path.metadata().map(|m| m.len()).unwrap_or(0);
-    }
-
-    let output = std::process::Command::new("du")
-        .args(["-sk"])
-        .arg(path)
-        .stderr(std::process::Stdio::null())
-        .output();
-
-    match output {
-        Ok(o) if o.status.success() => {
-            String::from_utf8_lossy(&o.stdout)
-                .split_whitespace()
-                .next()
-                .and_then(|s| s.parse::<u64>().ok())
-                .map(|kb| kb * 1024)
-                .unwrap_or(0)
-        }
-        _ => 0,
-    }
-}
-
-/// Find directories matching a name pattern.
+/// Find directories matching a name pattern (parallel).
 pub fn find_dirs_by_name(root: &Path, name: &str, max_depth: usize) -> Vec<ScanResult> {
     WalkDir::new(root)
         .max_depth(max_depth)
@@ -154,13 +131,41 @@ pub fn find_dirs_by_name(root: &Path, name: &str, max_depth: usize) -> Vec<ScanR
         .filter(|e| e.file_type().is_dir() && e.file_name().to_string_lossy() == name)
         .map(|entry| {
             let path = entry.path().to_path_buf();
-            let size = du_single(&path);
+            let (size, file_count) = scan_dir_stats(&path);
             ScanResult {
                 path: path.display().to_string(),
                 size,
-                file_count: 0,
+                file_count,
                 is_dir: true,
             }
         })
         .collect()
+}
+
+/// Find files larger than a threshold within a directory.
+pub fn find_large_files(root: &Path, min_bytes: u64, max_depth: usize) -> Vec<ScanResult> {
+    let mut results: Vec<ScanResult> = WalkDir::new(root)
+        .max_depth(max_depth)
+        .into_iter()
+        .par_bridge()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .filter_map(|entry| {
+            let size = entry.metadata().ok()?.len();
+            if size >= min_bytes {
+                Some(ScanResult {
+                    path: entry.path().display().to_string(),
+                    size,
+                    file_count: 1,
+                    is_dir: false,
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    results.sort_by(|a, b| b.size.cmp(&a.size));
+    results.truncate(50); // Top 50 largest files
+    results
 }

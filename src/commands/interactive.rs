@@ -84,10 +84,11 @@ pub fn run() {
 }
 
 fn run_selected(idx: usize) {
+    use crate::cleaners::DeleteMode;
     match idx {
-        0 => super::clean::run(false),     // Actually clean (has confirmation inside)
-        1 => super::uninstall::run(false), // Actually uninstall (user selects + confirms)
-        2 => super::optimize::run(false),  // Actually optimize
+        0 => super::clean::run(false, DeleteMode::Trash),
+        1 => super::uninstall::run(false, DeleteMode::Trash),
+        2 => super::optimize::run(false),
         3 => super::scan::run("~"),
         4 => super::status::run(),
         _ => {}

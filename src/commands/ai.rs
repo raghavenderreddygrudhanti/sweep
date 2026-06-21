@@ -2,8 +2,9 @@ use bytesize::ByteSize;
 use colored::*;
 use crate::scanner;
 use crate::cleaners::ai;
+use crate::cleaners::DeleteMode;
 
-pub fn run(dry_run: bool) {
+pub fn run(dry_run: bool, _mode: DeleteMode) {
     let mode = if dry_run { "(preview)" } else { "" };
     super::ui::print_header(&format!("\x1b[1;35m🤖 AI/ML Cache Clean\x1b[0m {}", mode));
 

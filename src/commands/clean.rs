@@ -4,8 +4,9 @@ use std::path::PathBuf;
 use crossterm::{terminal, event};
 use crossterm::event::{Event, KeyCode};
 use crate::scanner;
+use crate::cleaners::DeleteMode;
 
-pub fn run(_dry_run: bool) {
+pub fn run(_dry_run: bool, _mode: DeleteMode) {
     super::ui::print_header("\x1b[1;35mClean Your Mac\x1b[0m");
 
     let home = dirs::home_dir().unwrap_or_default();
