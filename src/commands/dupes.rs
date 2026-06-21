@@ -103,6 +103,48 @@ fn pick_folders() -> Vec<PathBuf> {
     paths
 }
 
+/// Ask user for minimum file size.
+fn pick_min_size() -> u64 {
+    let sizes: &[(&str, u64)] = &[
+        ("100 KB (find all dupes)",   100 * 1024),
+        ("500 KB (recommended)",      500 * 1024),
+        ("1 MB",                      1024 * 1024),
+        ("5 MB (large files only)",   5 * 1024 * 1024),
+        ("50 MB (very large only)",   50 * 1024 * 1024),
+    ];
+
+    println!("  \x1b[1mMinimum file size:\x1b[0m\n");
+    for (i, (label, _)) in sizes.iter().enumerate() {
+        let mark = if i == 1 { "\x1b[32m\u{25b6}\x1b[0m" } else { " " };
+        println!("    {} {}. {}", mark, i + 1, label);
+    }
+    println!("\n  \x1b[90mPress 1-5 or Enter for default (500 KB)\x1b[0m");
+    print!("  \x1b[1;33mSize:\x1b[0m ");
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+
+    let _ = crossterm::terminal::enable_raw_mode();
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    while crossterm::event::poll(std::time::Duration::from_millis(150)).unwrap_or(false) {
+        let _ = crossterm::event::read();
+    }
+    let choice = loop {
+        if let Ok(crossterm::event::Event::Key(key)) = crossterm::event::read() {
+            match key.code {
+                crossterm::event::KeyCode::Char(c) if c >= '1' && c <= '5' => {
+                    break (c as usize) - ('1' as usize);
+                }
+                crossterm::event::KeyCode::Enter => break 1, // default: 500KB
+                crossterm::event::KeyCode::Esc | crossterm::event::KeyCode::Char('q') => break 1,
+                _ => continue,
+            }
+        }
+    };
+    let _ = crossterm::terminal::disable_raw_mode();
+    println!();
+
+    sizes[choice].1
+}
+
 /// Default scan paths (used by CLI with explicit path).
 fn default_scan_paths() -> Vec<PathBuf> {
     let home = crate::error::home_or_exit();
@@ -138,13 +180,20 @@ pub fn run(path: &str, min_size: u64) {
         return;
     }
 
+    // Interactive: let user pick min size
+    let actual_min_size = if path == "~" {
+        pick_min_size()
+    } else {
+        min_size
+    };
+
     let home_str = crate::error::home_or_exit().display().to_string();
     println!("  Scanning: {}",
         scan_paths.iter()
             .map(|p| p.display().to_string().replace(&home_str, "~"))
             .collect::<Vec<_>>()
             .join(", "));
-    println!("  Min size: {}\n", ByteSize::b(min_size));
+    println!("  Min size: {}\n", ByteSize::b(actual_min_size));
 
     // Phase 1: Group files by size (skip junk dirs, parallel-friendly)
     let mut size_groups: HashMap<u64, Vec<PathBuf>> = HashMap::new();
@@ -165,7 +214,7 @@ pub fn run(path: &str, min_size: u64) {
         {
             if !entry.file_type().is_file() { continue; }
             let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
-            if size < min_size { continue; }
+            if size < actual_min_size { continue; }
 
             size_groups.entry(size)
                 .or_default()
