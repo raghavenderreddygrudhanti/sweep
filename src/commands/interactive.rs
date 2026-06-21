@@ -118,7 +118,7 @@ fn run_selected(idx: usize) {
     match idx {
         0 => super::clean::run(false, DeleteMode::Trash),
         1 => super::uninstall::run(false, DeleteMode::Trash),
-        2 => super::dupes::run("~", 5 * 1024 * 1024),
+        2 => super::dupes::run("~", 500 * 1024),
         3 => super::scan::run("~"),
         4 => super::optimize::run(false),
         5 => super::recommend::run(),
