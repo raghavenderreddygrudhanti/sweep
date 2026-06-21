@@ -4,7 +4,7 @@ use std::io::{self, Write};
 use bytesize::ByteSize;
 
 const MENU: &[(&str, &str, &str)] = &[
-    ("Clean",     "Free up disk space (caches, logs, browsers)",  "\x1b[32m"),
+    ("clean",     "Free up disk space (caches, logs, browsers)",  "\x1b[32m"),
     ("AI/ML",     "Clean HuggingFace, Ollama, PyTorch caches",    "\x1b[35m"),
     ("Dev",       "Remove old node_modules, target, .venv",       "\x1b[36m"),
     ("Uninstall", "Remove apps and leftover files",               "\x1b[33m"),
