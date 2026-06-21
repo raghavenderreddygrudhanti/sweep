@@ -1,5 +1,13 @@
 /// Shared UI components for consistent branding across all screens.
 /// All screens should use these for uniform look, navigation, and footers.
+///
+/// COLOR CODE REFERENCE (used consistently across all screens):
+/// - Green  (\x1b[32m) — success, freed space, healthy, deletable items
+/// - Yellow (\x1b[33m) — warning, in-progress, scanning, moderate
+/// - Red    (\x1b[31m) — critical, large usage, growth, errors
+/// - Cyan   (\x1b[36m) — selected/highlighted item
+/// - Gray   (\x1b[90m) — disabled, system/protected, hints, unchanged
+/// - Bold   (\x1b[1m)  — emphasis, totals, sizes
 
 use crossterm::event::{KeyCode, KeyEvent};
 

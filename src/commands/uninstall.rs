@@ -54,13 +54,28 @@ pub fn run(dry_run: bool, _mode: DeleteMode) {
 
         for i in scroll_start..display_end {
             let app = &apps_list[i];
-            let ptr = if i == selected { " \x1b[32m▶\x1b[0m" } else { "  " };
-            let chk = if marked[i] { "\x1b[32m●\x1b[0m" } else { "\x1b[90m○\x1b[0m" };
+            let is_system = app.path.metadata()
+                .map(|m| {
+                    use std::os::unix::fs::MetadataExt;
+                    m.uid() == 0 // owned by root
+                })
+                .unwrap_or(false);
+
+            let ptr = if i == selected { " \x1b[32m\u{25b6}\x1b[0m" } else { "  " };
+            let chk = if marked[i] { "\x1b[32m\u{25cf}\x1b[0m" }
+                else if is_system { "\x1b[90m\u{25cb}\x1b[0m" }  // gray circle for system
+                else { "\x1b[37m\u{25cb}\x1b[0m" };              // white circle for user
 
             let size_str = ByteSize::b(app.size).to_string();
-            let size_colored = if app.size > 2_000_000_000 { format!("\x1b[31m{}\x1b[0m", size_str) }
-                else if app.size > 500_000_000 { format!("\x1b[33m{}\x1b[0m", size_str) }
-                else { size_str };
+            let size_colored = if is_system {
+                format!("\x1b[90m{}\x1b[0m", size_str)  // gray for system
+            } else if app.size > 2_000_000_000 {
+                format!("\x1b[31m{}\x1b[0m", size_str)  // red for >2GB
+            } else if app.size > 500_000_000 {
+                format!("\x1b[33m{}\x1b[0m", size_str)  // yellow for >500MB
+            } else {
+                format!("\x1b[32m{}\x1b[0m", size_str)  // green for small
+            };
 
             let remnants = apps::find_app_remnants(app);
             let extra = if !remnants.is_empty() {
@@ -69,14 +84,18 @@ pub fn run(dry_run: bool, _mode: DeleteMode) {
 
             let name = if i == selected {
                 format!("\x1b[1;36m{}\x1b[0m", app.name)
+            } else if is_system {
+                format!("\x1b[90m{}\x1b[0m", app.name)  // gray for system apps
             } else if marked[i] {
                 format!("\x1b[32m{}\x1b[0m", app.name)
             } else {
                 app.name.clone()
             };
 
-            out.push_str(&format!("{} {} \x1b[1m{:>9}\x1b[0m  {}{}\r\n",
-                ptr, chk, size_colored, name, extra));
+            let system_tag = if is_system { " \x1b[90m[system]\x1b[0m" } else { "" };
+
+            out.push_str(&format!("{} {} {:>9}  {}{}{}\r\n",
+                ptr, chk, size_colored, name, extra, system_tag));
         }
 
         // Footer
