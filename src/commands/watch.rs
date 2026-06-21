@@ -16,8 +16,9 @@ pub fn run(threshold_gb: u64) {
     println!("  Alert threshold: \x1b[33m{}\x1b[0m free", ByteSize::b(threshold_bytes));
     println!("  Check interval: every 5 minutes");
     println!();
-    println!("  \x1b[90mPress Ctrl+C to stop\x1b[0m\n");
+    println!("  \x1b[90mPress q to stop\x1b[0m\n");
 
+    let _ = crossterm::terminal::enable_raw_mode();
     let mut last_alert = false;
     let mut checks: u64 = 0;
 
@@ -31,7 +32,6 @@ pub fn run(threshold_gb: u64) {
 
         let status = if free < threshold_bytes {
             if !last_alert {
-                // Send macOS notification
                 send_notification(free);
                 last_alert = true;
             }
@@ -41,20 +41,20 @@ pub fn run(threshold_gb: u64) {
             format!("\x1b[32m\u{2713} OK: {} free ({}%)\x1b[0m", ByteSize::b(free), pct_free)
         };
 
-        // Update status line
         let timestamp = chrono::Local::now().format("%H:%M:%S");
         print!("\r\x1b[K  [{}] Check #{}: {}", timestamp, checks, status);
         let _ = io::stdout().flush();
 
-        // Sleep 5 minutes (check for Ctrl+C via crossterm)
-        for _ in 0..300 {
-            std::thread::sleep(std::time::Duration::from_secs(1));
-            // Check if user wants to quit
-            if crossterm::event::poll(std::time::Duration::from_millis(0)).unwrap_or(false) {
+        // Wait 5 minutes, checking for quit every 100ms
+        for _ in 0..3000 { // 3000 * 100ms = 5 minutes
+            if crossterm::event::poll(std::time::Duration::from_millis(100)).unwrap_or(false) {
                 if let Ok(crossterm::event::Event::Key(key)) = crossterm::event::read() {
-                    if key.code == crossterm::event::KeyCode::Char('q')
-                        || key.code == crossterm::event::KeyCode::Char('c')
-                        || key.code == crossterm::event::KeyCode::Esc {
+                    if matches!(key.code,
+                        crossterm::event::KeyCode::Char('q') |
+                        crossterm::event::KeyCode::Char('Q') |
+                        crossterm::event::KeyCode::Esc
+                    ) {
+                        let _ = crossterm::terminal::disable_raw_mode();
                         println!("\n\n  \x1b[90mWatch stopped.\x1b[0m\n");
                         return;
                     }
