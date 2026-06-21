@@ -137,7 +137,7 @@ pub fn run(dry_run: bool, _mode: DeleteMode) {
                             for (i, app) in apps_list.iter().enumerate() {
                                 if marked[i] {
                                     // Use mv to Trash instead of osascript
-                                    let trash = dirs::home_dir().unwrap_or_default().join(".Trash");
+                                    let trash = crate::error::home_or_exit().join(".Trash");
                                     let dest = trash.join(app.path.file_name().unwrap_or_default());
                                     let _ = std::process::Command::new("mv")
                                         .arg(&app.path)
@@ -195,7 +195,7 @@ pub fn run(dry_run: bool, _mode: DeleteMode) {
                             let _ = stdout.write_all(progress.as_bytes());
                             let _ = stdout.flush();
 
-                            let trash = dirs::home_dir().unwrap_or_default().join(".Trash");
+                            let trash = crate::error::home_or_exit().join(".Trash");
                             let dest = trash.join(app.path.file_name().unwrap_or_default());
                             let _ = std::process::Command::new("mv")
                                 .arg(&app.path)

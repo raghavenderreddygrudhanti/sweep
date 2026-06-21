@@ -1,10 +1,9 @@
 //! Xcode cleaner — DerivedData, simulators, archives, device support.
 
 use std::path::PathBuf;
-use dirs;
 
 pub fn xcode_paths() -> Vec<(PathBuf, &'static str)> {
-    let home = dirs::home_dir().unwrap_or_default();
+    let home = crate::error::home_or_exit();
     vec![
         (home.join("Library/Developer/Xcode/DerivedData"), "Xcode DerivedData"),
         (home.join("Library/Developer/Xcode/Archives"), "Xcode Archives"),

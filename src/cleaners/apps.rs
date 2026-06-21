@@ -2,7 +2,6 @@
 
 use std::path::PathBuf;
 use std::fs;
-use dirs;
 
 /// Represents an installed application.
 #[derive(Debug, Clone)]
@@ -70,7 +69,7 @@ fn get_bundle_id(app_path: &PathBuf) -> Option<String> {
 
 /// Find all remnant files for an app (by name and bundle_id).
 pub fn find_app_remnants(app: &InstalledApp) -> Vec<PathBuf> {
-    let home = dirs::home_dir().unwrap_or_default();
+    let home = crate::error::home_or_exit();
     let mut remnants = vec![];
 
     let search_dirs = vec![

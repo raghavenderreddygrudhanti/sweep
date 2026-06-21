@@ -23,7 +23,7 @@ fn try_delete(path: &str) -> bool {
     };
 
     // Strategy 1: Move to ~/.Trash (recoverable, no popup)
-    let trash_dir = dirs::home_dir().unwrap_or_default().join(".Trash");
+    let trash_dir = crate::error::home_or_exit().join(".Trash");
     let file_name = p.file_name().unwrap_or_default().to_string_lossy().to_string();
     let mut trash_dest = trash_dir.join(&file_name);
 
@@ -84,7 +84,7 @@ struct Category {
 }
 
 fn get_categories() -> Vec<Category> {
-    let home = dirs::home_dir().unwrap_or_default();
+    let home = crate::error::home_or_exit();
     vec![
         Category { name: "Caches", path: home.join("Library/Caches"), size: -1, cleanable: true, color: "32" },
         Category { name: "App Support", path: home.join("Library/Application Support"), size: -1, cleanable: false, color: "33" },
@@ -402,7 +402,7 @@ pub fn run(path: &str) {
                                 multi_selected.clear();
                             }
                             let is_root = categories.iter().filter(|c| c.size > 0).any(|c| c.path == current_path)
-                                || current_path == dirs::home_dir().unwrap_or_default()
+                                || current_path == crate::error::home_or_exit()
                                 || current_path == PathBuf::from("/");
                             if is_root {
                                 mode = "overview";

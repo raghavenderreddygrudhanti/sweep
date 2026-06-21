@@ -100,7 +100,7 @@ pub fn remove_file_safe(path: &Path, dry_run: bool) -> u64 {
 
 /// Move a path to the system Trash (recoverable).
 /// Falls back to Finder AppleScript on macOS if the trash crate fails (permission issues).
-fn trash_delete(path: &Path) -> SweepResult<()> {
+pub(crate) fn trash_delete(path: &Path) -> SweepResult<()> {
     // First try the trash crate (fast, no UI)
     match ::trash::delete(path) {
         Ok(()) => Ok(()),

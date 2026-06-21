@@ -9,7 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const CACHE_TTL_SECS: u64 = 24 * 3600; // 24 hours
 
 fn cache_path() -> PathBuf {
-    let dir = dirs::home_dir().unwrap_or_default().join(".sweep");
+    let dir = crate::error::home_or_exit().join(".sweep");
     let _ = fs::create_dir_all(&dir);
     dir.join("sizes.json")
 }

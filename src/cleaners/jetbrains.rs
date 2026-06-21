@@ -2,10 +2,9 @@
 
 use std::path::PathBuf;
 use std::fs;
-use dirs;
 
 pub fn jetbrains_paths() -> Vec<(PathBuf, &'static str)> {
-    let home = dirs::home_dir().unwrap_or_default();
+    let home = crate::error::home_or_exit();
     let mut paths = vec![];
 
     // Caches

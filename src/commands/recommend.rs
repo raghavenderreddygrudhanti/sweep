@@ -22,7 +22,7 @@ pub fn run() {
 
     super::ui::print_header("\x1b[1;32m\u{1f4a1} Sweep Recommendations\x1b[0m");
 
-    let home = dirs::home_dir().unwrap_or_default();
+    let home = crate::error::home_or_exit();
     let sources = build_sources(&home);
 
     let mut recommendations: Vec<Recommendation> = Vec::new();
@@ -148,7 +148,7 @@ pub fn run() {
 
 /// JSON mode — scan everything then output.
 fn run_json() {
-    let home = dirs::home_dir().unwrap_or_default();
+    let home = crate::error::home_or_exit();
     let sources = build_sources(&home);
 
     let mut recommendations: Vec<Recommendation> = Vec::new();
@@ -196,7 +196,7 @@ fn build_sources(home: &PathBuf) -> Vec<RecommendSource> {
 
 /// Execute a clean and return bytes freed.
 fn run_clean_command(cmd: &str) -> u64 {
-    let home = dirs::home_dir().unwrap_or_default();
+    let home = crate::error::home_or_exit();
     let mut freed: u64 = 0;
 
     let paths: Vec<PathBuf> = match cmd {

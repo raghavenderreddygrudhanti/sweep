@@ -2,11 +2,10 @@
 //! Cleans: HuggingFace, Ollama, torch, pip, conda, model downloads.
 
 use std::path::PathBuf;
-use dirs;
 
 /// AI/ML cache locations that can grow to 20-100+ GB.
 pub fn ai_cache_paths() -> Vec<(PathBuf, &'static str)> {
-    let home = dirs::home_dir().unwrap_or_default();
+    let home = crate::error::home_or_exit();
 
     vec![
         (home.join(".cache/huggingface"), "HuggingFace models & datasets"),

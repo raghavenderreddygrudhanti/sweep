@@ -78,7 +78,7 @@ pub fn run(dry_run: bool) {
     let worker = thread::spawn(move || {
         if dry_run { return; }
 
-        let home = dirs::home_dir().unwrap_or_default();
+        let home = crate::error::home_or_exit();
 
         // Helper to mark task running/done
         macro_rules! run_task {
@@ -133,10 +133,9 @@ pub fn run(dry_run: bool) {
             }
         });
 
-        // 3: Dock (skip killall — it causes visual disruption)
+        // 3: Dock (skip killall — it causes visual disruption). Read-only check.
         run_task!(3, {
-            // Instead of killing Dock, just reset icon spacing cache
-            let defaults = std::process::Command::new("defaults")
+            let _ = std::process::Command::new("defaults")
                 .args(["read", "com.apple.dock"])
                 .stderr(std::process::Stdio::null())
                 .stdout(std::process::Stdio::null())
@@ -262,11 +261,10 @@ pub fn run(dry_run: bool) {
 
         // 12: .DS_Store
         run_task!(12, {
-            let ds_count = opt::clean_ds_store(false);
+            let (ds_count, ds_bytes) = opt::clean_ds_store(false);
             if ds_count > 0 {
-                let size = ds_count * 4096;
-                *total_bg.lock().unwrap() += size;
-                (true, format!("{} files removed ({})", ds_count, ByteSize::b(size)))
+                *total_bg.lock().unwrap() += ds_bytes;
+                (true, format!("{} files removed ({})", ds_count, ByteSize::b(ds_bytes)))
             } else {
                 (true, "Already clean".into())
             }
@@ -356,13 +354,15 @@ pub fn run(dry_run: bool) {
         if all_done {
             let freed = *total_freed.lock().unwrap();
             let count = *task_count.lock().unwrap();
-            out.push_str(&format!("  \x1b[1;32mOptimization Complete\x1b[0m\r\n"));
-            out.push_str(&format!("  Applied \x1b[32m{}\x1b[0m optimizations", count));
+            out.push_str(&format!("  \x1b[1;32mMaintenance Complete\x1b[0m\r\n"));
+            // These tasks are a mix of actions (cache clears, refreshes) and
+            // read-only health checks, so report "ran" rather than overclaiming
+            // that every task applied a change.
+            out.push_str(&format!("  Ran \x1b[32m{}\x1b[0m maintenance tasks", count));
             if freed > 0 {
                 out.push_str(&format!(", reclaimed \x1b[32m{}\x1b[0m", ByteSize::b(freed)));
             }
             out.push_str("\r\n");
-            out.push_str("  System fully optimized\r\n");
             out.push_str("\r\n  \x1b[90mPress any key to return...\x1b[0m\r\n");
         } else {
             out.push_str(&format!("  {} ({}/{})\r\n",

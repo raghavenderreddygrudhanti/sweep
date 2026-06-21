@@ -82,9 +82,11 @@ pub fn purge_memory(dry_run: bool) -> bool {
 }
 
 /// Remove .DS_Store files recursively from home (max depth 4 for speed).
-pub fn clean_ds_store(dry_run: bool) -> u64 {
-    let home = dirs::home_dir().unwrap_or_default();
+/// Returns (files_removed, bytes_freed) using the real on-disk file sizes.
+pub fn clean_ds_store(dry_run: bool) -> (u64, u64) {
+    let home = crate::error::home_or_exit();
     let mut count = 0u64;
+    let mut bytes = 0u64;
 
     for entry in walkdir::WalkDir::new(&home)
         .max_depth(4)
@@ -92,19 +94,24 @@ pub fn clean_ds_store(dry_run: bool) -> u64 {
         .filter_map(|e| e.ok())
     {
         if entry.file_name() == ".DS_Store" {
-            if !dry_run {
-                let _ = std::fs::remove_file(entry.path());
+            // Measure before deleting so the reported total is accurate.
+            let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+            if dry_run {
+                count += 1;
+                bytes += size;
+            } else if std::fs::remove_file(entry.path()).is_ok() {
+                count += 1;
+                bytes += size;
             }
-            count += 1;
         }
     }
 
-    count
+    (count, bytes)
 }
 
 /// Find and remove installer files (.dmg, .pkg).
 pub fn find_installers() -> Vec<(std::path::PathBuf, u64)> {
-    let home = dirs::home_dir().unwrap_or_default();
+    let home = crate::error::home_or_exit();
     let search_dirs = vec![
         home.join("Downloads"),
         home.join("Desktop"),

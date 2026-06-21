@@ -17,7 +17,7 @@ struct CleanTarget {
 pub fn run(dry_run: bool, mode: DeleteMode) {
     super::ui::print_header("\x1b[1;35m\u{1f9f9} Clean\x1b[0m");
 
-    let home = dirs::home_dir().unwrap_or_default();
+    let home = crate::error::home_or_exit();
 
     // Collect all targets with their sizes
     let mut targets: Vec<CleanTarget> = Vec::new();
@@ -160,6 +160,10 @@ pub fn run(dry_run: bool, mode: DeleteMode) {
     println!("  \u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}");
     println!();
 
+    match mode {
+        DeleteMode::Trash => println!("  \x1b[90mItems will be moved to the Trash (recoverable).\x1b[0m"),
+        DeleteMode::Force => println!("  \x1b[1;31mItems will be permanently deleted (--force).\x1b[0m"),
+    }
     print!("  \x1b[1;33mClean now? (y/n):\x1b[0m ");
     let _ = io::stdout().flush();
 
@@ -227,22 +231,23 @@ fn scan_and_show(targets: &mut Vec<CleanTarget>, total: &mut u64, name: &str, pa
 }
 
 /// Delete a target's contents (not the directory itself).
-/// Silently skips files that can't be deleted (permission issues).
-fn delete_target(target: &CleanTarget, _mode: DeleteMode) -> u64 {
+/// Honors the requested DeleteMode: Trash (default, recoverable) or Force
+/// (permanent). Silently skips items that can't be deleted (permission issues).
+fn delete_target(target: &CleanTarget, mode: DeleteMode) -> u64 {
     let path = &target.path;
 
     if !path.exists() {
         return 0;
     }
 
-    // Special case: Trash — use the trash cleaner
+    // Special case: Trash — emptying the trash is always permanent.
     if target.name == "Trash" {
         return crate::cleaners::trash::empty_trash(false);
     }
 
-    // For caches/logs: force-delete contents silently.
-    // These are regenerable caches, not user data — Trash is overkill.
-    // Silently skip anything that fails (permission denied, in-use, etc.)
+    // Delete each child according to the selected mode. We remove the contents
+    // (not the cache directory itself) so apps can recreate their cache layout.
+    // Anything that fails (permission denied, file in use) is skipped silently.
     let mut freed: u64 = 0;
 
     if let Ok(entries) = std::fs::read_dir(path) {
@@ -254,17 +259,20 @@ fn delete_target(target: &CleanTarget, _mode: DeleteMode) -> u64 {
                 p.metadata().map(|m| m.len()).unwrap_or(0)
             };
 
-            // Try to delete silently — skip on failure (no prompts, no errors)
-            let success = if p.is_dir() {
-                std::fs::remove_dir_all(&p).is_ok()
-            } else {
-                std::fs::remove_file(&p).is_ok()
+            let success = match mode {
+                DeleteMode::Trash => crate::cleaners::trash_delete(&p).is_ok(),
+                DeleteMode::Force => {
+                    if p.is_dir() {
+                        std::fs::remove_dir_all(&p).is_ok()
+                    } else {
+                        std::fs::remove_file(&p).is_ok()
+                    }
+                }
             };
 
             if success {
                 freed += size;
             }
-            // If it fails (permission denied, file in use), just skip silently
         }
     }
 
@@ -272,7 +280,7 @@ fn delete_target(target: &CleanTarget, _mode: DeleteMode) -> u64 {
         crate::history::log_delete(
             path.to_str().unwrap_or(""),
             freed,
-            "clean",
+            if mode == DeleteMode::Trash { "clean-trash" } else { "clean" },
         );
     }
 

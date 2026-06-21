@@ -67,7 +67,7 @@ pub fn run(dry_run: bool, older_than_days: u64, _mode: DeleteMode) {
         out.push_str("\r\n");
 
         for (i, (path, size, kind, checked)) in found.iter().take(15).enumerate() {
-            let short = path.replace(&dirs::home_dir().unwrap_or_default().to_string_lossy().to_string(), "~");
+            let short = path.replace(&crate::error::home_or_exit().to_string_lossy().to_string(), "~");
             let short_display = if short.len() > 45 { &short[short.len()-45..] } else { &short };
 
             let ptr = if i == selected { " \x1b[32m▶\x1b[0m" } else { "  " };

@@ -31,7 +31,7 @@ pub fn run() {
         let _ = std::io::Write::flush(&mut std::io::stdout());
     }
 
-    let home = dirs::home_dir().unwrap_or_default();
+    let home = crate::error::home_or_exit();
     let current_children = scanner::scan_children(&home);
 
     if !output::is_json() {
@@ -109,7 +109,7 @@ pub fn run() {
         };
 
         let display_path = entry.path.replace(
-            &dirs::home_dir().unwrap_or_default().display().to_string(),
+            &crate::error::home_or_exit().display().to_string(),
             "~",
         );
 
