@@ -245,16 +245,17 @@ fn run_rules_based() {
 /// AI-powered scan (requires `ai` feature + SmolLM2 model).
 #[cfg(feature = "ai")]
 fn run_with_ai() {
-    use llama_crab::{LlamaModel, LlamaParams, ChatMessage, Role};
+    use llama_crab::{Llama, LlamaParams, ChatMessage, Role};
 
     // Download/load SmolLM2-135M from HuggingFace
     println!("  \x1b[33m\u{2022}\x1b[0m Loading model (first run downloads 138 MB)...");
     let _ = io::stdout().flush();
 
     let params = LlamaParams::new("HuggingFaceTB/SmolLM2-135M-Instruct-GGUF")
-        .with_context_size(512);
+        .with_hf_filename("smollm2-135m-instruct-q8_0.gguf")
+        .with_n_ctx(512);
 
-    let model = match LlamaModel::load(params) {
+    let mut llama = match Llama::load(params) {
         Ok(m) => m,
         Err(e) => {
             println!("  \x1b[31mFailed to load model: {}\x1b[0m", e);
@@ -288,16 +289,16 @@ fn run_with_ai() {
             );
 
             let messages = vec![
-                ChatMessage { role: Role::System, content: "You are a helpful file cleanup assistant. Be concise.".into() },
-                ChatMessage { role: Role::User, content: prompt },
+                ChatMessage::new(Role::System, "You are a helpful file cleanup assistant. Be concise."),
+                ChatMessage::new(Role::User, &prompt),
             ];
 
             print!("  \x1b[33m\u{2022}\x1b[0m Analyzing {}... ", name);
             let _ = io::stdout().flush();
 
-            match model.chat(&messages, 100) {
+            match llama.generate_chat(&messages, 100) {
                 Ok(response) => {
-                    let answer = response.trim();
+                    let answer = response.message.content.trim().to_string();
                     let is_safe = answer.to_lowercase().contains("safe")
                         || answer.to_lowercase().contains("can be deleted");
                     let icon = if is_safe { "\x1b[32m\u{2713}\x1b[0m" } else { "\x1b[33m?\x1b[0m" };
