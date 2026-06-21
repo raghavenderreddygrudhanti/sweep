@@ -35,7 +35,14 @@ pub fn run(dry_run: bool, mode: DeleteMode) {
 
     if found.is_empty() {
         println!("\n  \x1b[32m\u{2713}\x1b[0m No significant AI/ML caches found.\n");
-
+        println!("  \x1b[90mPress any key to continue...\x1b[0m");
+        let _ = crossterm::terminal::enable_raw_mode();
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        while crossterm::event::poll(std::time::Duration::from_millis(150)).unwrap_or(false) {
+            let _ = crossterm::event::read();
+        }
+        let _ = crossterm::event::read();
+        let _ = crossterm::terminal::disable_raw_mode();
         return;
     }
 
@@ -46,7 +53,14 @@ pub fn run(dry_run: bool, mode: DeleteMode) {
 
     if dry_run {
         println!("  \x1b[90mRun without --dry-run to actually clean.\x1b[0m\n");
-
+        println!("  \x1b[90mPress any key to continue...\x1b[0m");
+        let _ = crossterm::terminal::enable_raw_mode();
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        while crossterm::event::poll(std::time::Duration::from_millis(150)).unwrap_or(false) {
+            let _ = crossterm::event::read();
+        }
+        let _ = crossterm::event::read();
+        let _ = crossterm::terminal::disable_raw_mode();
         return;
     }
 
