@@ -35,7 +35,7 @@ pub fn run(dry_run: bool, mode: DeleteMode) {
 
     if found.is_empty() {
         println!("\n  \x1b[32m\u{2713}\x1b[0m No significant AI/ML caches found.\n");
-        super::ui::wait_any_key();
+
         return;
     }
 
@@ -46,7 +46,7 @@ pub fn run(dry_run: bool, mode: DeleteMode) {
 
     if dry_run {
         println!("  \x1b[90mRun without --dry-run to actually clean.\x1b[0m\n");
-        super::ui::wait_any_key();
+
         return;
     }
 
@@ -73,7 +73,7 @@ pub fn run(dry_run: bool, mode: DeleteMode) {
 
     if !proceed {
         println!("\n  \x1b[90mCancelled.\x1b[0m");
-        super::ui::wait_any_key();
+
         return;
     }
 
@@ -119,5 +119,5 @@ pub fn run(dry_run: bool, mode: DeleteMode) {
     }
 
     println!("  \x1b[1;32m\u{1f389} Done! Freed: {}\x1b[0m\n", ByteSize::b(freed).to_string().bold());
-    super::ui::wait_any_key();
+
 }

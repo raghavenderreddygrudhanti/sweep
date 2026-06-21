@@ -143,7 +143,7 @@ pub fn run(dry_run: bool, mode: DeleteMode) {
     if total == 0 {
         println!("  \x1b[32m\u{2713} System already clean\x1b[0m");
         println!("  \u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}");
-        super::ui::wait_any_key();
+
         return;
     }
 
@@ -151,7 +151,7 @@ pub fn run(dry_run: bool, mode: DeleteMode) {
         println!("  \x1b[1;33mWould free: {} (dry run — nothing deleted)\x1b[0m", ByteSize::b(total));
         println!("  \u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}");
         println!("\n  \x1b[90mRun without --dry-run to actually clean.\x1b[0m");
-        super::ui::wait_any_key();
+
         return;
     }
 
@@ -181,7 +181,7 @@ pub fn run(dry_run: bool, mode: DeleteMode) {
 
     if !proceed {
         println!("\n  \x1b[90mCancelled.\x1b[0m");
-        super::ui::wait_any_key();
+
         return;
     }
 
@@ -200,7 +200,7 @@ pub fn run(dry_run: bool, mode: DeleteMode) {
     }
 
     println!("  \x1b[1;32m\u{1f389} Done! Reclaimed: {}\x1b[0m", ByteSize::b(actually_freed));
-    super::ui::wait_any_key();
+
 }
 
 /// Scan a path, display its size, and add to targets if non-empty.

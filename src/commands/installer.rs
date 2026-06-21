@@ -11,7 +11,7 @@ pub fn run(dry_run: bool, _mode: DeleteMode) {
 
     if installers.is_empty() {
         println!("  ✨ No installer files found.");
-        super::ui::wait_any_key();
+
         return;
     }
 
@@ -32,5 +32,5 @@ pub fn run(dry_run: bool, _mode: DeleteMode) {
         println!("  🎉 Freed: {}", ByteSize::b(total).to_string().bold().green());
     }
 
-    super::ui::wait_any_key();
+
 }

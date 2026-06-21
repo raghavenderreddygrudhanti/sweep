@@ -73,7 +73,7 @@ pub fn run() {
 
     if recommendations.is_empty() {
         println!("  \x1b[32m\u{2713}\x1b[0m System looks clean! No major reclaimable space found.\n");
-        super::ui::wait_any_key();
+
         return;
     }
 

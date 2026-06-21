@@ -19,7 +19,7 @@ pub fn run() {
             super::ui::print_header("\x1b[1;34m\u{1f4c8} Space Timeline\x1b[0m");
             println!("\n  No previous scan data found.");
             println!("  Run {} first to establish a baseline.\n", "sweep scan ~".bold());
-            super::ui::wait_any_key();
+
         }
         return;
     }
@@ -88,7 +88,7 @@ pub fn run() {
     // Human-readable output
     if changes.is_empty() {
         println!("  No significant changes detected (threshold: 50 MB).\n");
-        super::ui::wait_any_key();
+
         return;
     }
 
@@ -125,5 +125,5 @@ pub fn run() {
         .collect();
     cache::save_all(&new_cache);
 
-    super::ui::wait_any_key();
+
 }
