@@ -285,9 +285,23 @@ pub fn run(path: &str) {
         let _ = stdout.write_all(out.as_bytes());
         let _ = stdout.flush();
 
-        // Input with timeout (so we can update scanning results)
-        if event::poll(std::time::Duration::from_millis(300)).unwrap_or(false) {
+        // Input with timeout (shorter timeout = faster Esc detection)
+        if event::poll(std::time::Duration::from_millis(100)).unwrap_or(false) {
             if let Ok(Event::Key(key)) = event::read() {
+                // Always allow q and Ctrl+C to quit immediately
+                if key.code == crossterm::event::KeyCode::Char('q')
+                    || key.code == crossterm::event::KeyCode::Char('Q')
+                    || (key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
+                        && key.code == crossterm::event::KeyCode::Char('c'))
+                {
+                    if !confirm_delete {
+                        break;
+                    } else {
+                        confirm_delete = false;
+                        status_msg.clear();
+                        continue;
+                    }
+                }
                 let item_count = if mode == "overview" {
                     categories.iter().filter(|c| c.size > 0).count()
                 } else {
@@ -358,13 +372,20 @@ pub fn run(path: &str) {
                                 multi_selected.clear();
                                 status_msg.clear();
                             }
-                        } else if mode == "folder" && selected < folder_results.len() && folder_results[selected].is_dir {
-                            current_path = PathBuf::from(&folder_results[selected].path);
-                            folder_results = scanner::scan_children(&current_path);
-                            folder_results.sort_by(|a, b| b.size.cmp(&a.size));
-                            selected = 0;
-                            multi_selected.clear();
-                            status_msg.clear();
+                        } else if mode == "folder" && selected < folder_results.len() {
+                            if folder_results[selected].is_dir {
+                                current_path = PathBuf::from(&folder_results[selected].path);
+                                folder_results = scanner::scan_children(&current_path);
+                                folder_results.sort_by(|a, b| b.size.cmp(&a.size));
+                                selected = 0;
+                                multi_selected.clear();
+                                status_msg.clear();
+                            } else {
+                                // It's a file — can't enter it
+                                let name = PathBuf::from(&folder_results[selected].path)
+                                    .file_name().unwrap_or_default().to_string_lossy().to_string();
+                                status_msg = format!("\x1b[90m\u{2139} {} is a file (use d to delete)\x1b[0m", name);
+                            }
                         }
                     }
                     super::ui::NavAction::Back => {
@@ -391,7 +412,7 @@ pub fn run(path: &str) {
                         status_msg.clear();
                     }
                     super::ui::NavAction::Quit => {
-                        // q — always quit back to main menu
+                        // Already handled above — this is a fallback
                         break;
                     }
                     super::ui::NavAction::Delete => {
