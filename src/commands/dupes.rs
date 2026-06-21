@@ -18,7 +18,98 @@ struct DupeGroup {
     paths: Vec<PathBuf>,
 }
 
-/// Default scan paths (Documents + Downloads — where dupes usually live).
+/// Interactive folder picker — user selects which folders to scan.
+fn pick_folders() -> Vec<PathBuf> {
+    let home = crate::error::home_or_exit();
+
+    let options: Vec<(&str, PathBuf)> = vec![
+        ("Documents", home.join("Documents")),
+        ("Downloads", home.join("Downloads")),
+        ("Desktop",   home.join("Desktop")),
+        ("Pictures",  home.join("Pictures")),
+        ("Movies",    home.join("Movies")),
+        ("Music",     home.join("Music")),
+        ("All above", home.clone()),
+    ]
+    .into_iter()
+    .filter(|(label, p)| *label == "All above" || p.exists())
+    .collect();
+
+    println!("  \x1b[1mSelect folders to scan for duplicates:\x1b[0m\n");
+
+    let mut selected = vec![false; options.len()];
+    // Pre-select Documents and Downloads
+    for (i, (label, _)) in options.iter().enumerate() {
+        if *label == "Documents" || *label == "Downloads" {
+            selected[i] = true;
+        }
+    }
+
+    for (i, (label, _)) in options.iter().enumerate() {
+        let mark = if selected[i] { "\x1b[32m\u{25cf}\x1b[0m" } else { "\x1b[90m\u{25cb}\x1b[0m" };
+        println!("    {} {}. {}", mark, i + 1, label);
+    }
+
+    println!("\n  \x1b[90mPress 1-{} to toggle, Enter to start, q to cancel\x1b[0m", options.len());
+    print!("  \x1b[1;33mChoice:\x1b[0m ");
+    let _ = io::stdout().flush();
+
+    let _ = crossterm::terminal::enable_raw_mode();
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    while crossterm::event::poll(std::time::Duration::from_millis(150)).unwrap_or(false) {
+        let _ = crossterm::event::read();
+    }
+
+    loop {
+        if let Ok(crossterm::event::Event::Key(key)) = crossterm::event::read() {
+            match key.code {
+                crossterm::event::KeyCode::Enter => break,
+                crossterm::event::KeyCode::Char('q') | crossterm::event::KeyCode::Esc => {
+                    let _ = crossterm::terminal::disable_raw_mode();
+                    return Vec::new();
+                }
+                crossterm::event::KeyCode::Char(c) if c.is_ascii_digit() => {
+                    let idx = (c as usize) - ('1' as usize);
+                    if idx < options.len() {
+                        // "All above" toggles everything
+                        if options[idx].0 == "All above" {
+                            let all_on = selected.iter().take(options.len() - 1).all(|&s| s);
+                            for s in selected.iter_mut().take(options.len() - 1) {
+                                *s = !all_on;
+                            }
+                        } else {
+                            selected[idx] = !selected[idx];
+                        }
+                        // Redraw
+                        // Move cursor up to redraw options
+                        print!("\x1b[{}A", options.len() + 3);
+                        for (i, (label, _)) in options.iter().enumerate() {
+                            let mark = if selected[i] { "\x1b[32m\u{25cf}\x1b[0m" } else { "\x1b[90m\u{25cb}\x1b[0m" };
+                            println!("\x1b[K    {} {}. {}", mark, i + 1, label);
+                        }
+                        println!("\x1b[K\n  \x1b[90mPress 1-{} to toggle, Enter to start, q to cancel\x1b[0m", options.len());
+                        print!("\x1b[K  \x1b[1;33mChoice:\x1b[0m ");
+                        let _ = io::stdout().flush();
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let _ = crossterm::terminal::disable_raw_mode();
+    println!();
+
+    let paths: Vec<PathBuf> = options.into_iter()
+        .enumerate()
+        .filter(|(i, (label, _))| selected[*i] && *label != "All above")
+        .map(|(_, (_, p))| p)
+        .collect();
+
+    paths
+}
+
+/// Default scan paths (used by CLI with explicit path).
 fn default_scan_paths() -> Vec<PathBuf> {
     let home = crate::error::home_or_exit();
     vec![
@@ -42,10 +133,16 @@ pub fn run(path: &str, min_size: u64) {
 
     // Determine scan paths
     let scan_paths: Vec<PathBuf> = if path == "~" {
-        default_scan_paths()
+        // Interactive: let user choose which folders to scan
+        pick_folders()
     } else {
         vec![PathBuf::from(path)]
     };
+
+    if scan_paths.is_empty() {
+        println!("  \x1b[90mNo folders selected.\x1b[0m\n");
+        return;
+    }
 
     let home_str = crate::error::home_or_exit().display().to_string();
     println!("  Scanning: {}",
