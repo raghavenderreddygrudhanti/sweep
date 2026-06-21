@@ -139,17 +139,27 @@ pub fn run() {
             println!("\n  \x1b[33mCleaning safe items...\x1b[0m");
             let mut freed: u64 = 0;
             for item in &safe_items {
+                // Use pre-scanned size (not post-delete metadata which returns 0)
+                let item_size_before = item.size;
+                let mut item_freed: u64 = 0;
                 if let Ok(entries) = std::fs::read_dir(&item.path) {
                     for entry in entries.flatten() {
                         let p = entry.path();
+                        // Measure BEFORE deleting
+                        let entry_size = if p.is_dir() {
+                            crate::scanner::scan_size_native(&p)
+                        } else {
+                            p.metadata().map(|m| m.len()).unwrap_or(0)
+                        };
                         let ok = if p.is_dir() { std::fs::remove_dir_all(&p).is_ok() }
                             else { std::fs::remove_file(&p).is_ok() };
                         if ok {
-                            freed += p.metadata().map(|m| m.len()).unwrap_or(0);
+                            item_freed += entry_size;
                         }
                     }
                 }
-                println!("  \x1b[32m\u{2713}\x1b[0m {}", item.label);
+                freed += item_freed;
+                println!("  \x1b[32m\u{2713}\x1b[0m {} ({})", item.label, ByteSize::b(item_freed));
             }
             println!("\n  \x1b[1;32m\u{2713} Freed: {}\x1b[0m\n", ByteSize::b(freed));
             crate::history::log_delete("recommend", freed, "smart-clean");
