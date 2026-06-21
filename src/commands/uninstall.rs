@@ -204,21 +204,32 @@ pub fn run(dry_run: bool, _mode: DeleteMode) {
                             let _ = std::process::Command::new("mv")
                                 .arg(&app.path)
                                 .arg(&dest)
+                                .stderr(std::process::Stdio::null())
                                 .output();
-                            let remnants = apps::find_app_remnants(app);
-                            for r in &remnants {
-                                let rdest = trash.join(r.file_name().unwrap_or_default());
-                                let _ = std::process::Command::new("mv")
-                                    .arg(r)
-                                    .arg(&rdest)
-                                    .output();
-                            }
-                            crate::history::log_delete(&app.path.display().to_string(), app.size, "uninstall");
 
-                            let _ = stdout.write_all(format!(
-                                "  \x1b[1;32m\u{2713} {} (+{} remnants) moved to Trash\x1b[0m\r\n\r\n  \x1b[90mPress any key to continue...\x1b[0m\r\n",
-                                app.name, remnants.len()
-                            ).as_bytes());
+                            // Check if it actually got deleted
+                            if app.path.exists() {
+                                let _ = stdout.write_all(format!(
+                                    "  \x1b[31m\u{2717}\x1b[0m {} \x1b[90m(system app, needs admin)\x1b[0m\r\n",
+                                    app.name
+                                ).as_bytes());
+                            } else {
+                                let remnants = apps::find_app_remnants(app);
+                                for r in &remnants {
+                                    let rdest = trash.join(r.file_name().unwrap_or_default());
+                                    let _ = std::process::Command::new("mv")
+                                        .arg(r)
+                                        .arg(&rdest)
+                                        .stderr(std::process::Stdio::null())
+                                        .output();
+                                }
+                                crate::history::log_delete(&app.path.display().to_string(), app.size, "uninstall");
+                                let _ = stdout.write_all(format!(
+                                    "  \x1b[32m\u{2713}\x1b[0m {} (+{} remnants) moved to Trash\r\n",
+                                    app.name, remnants.len()
+                                ).as_bytes());
+                            }
+                            let _ = stdout.write_all(b"\r\n  \x1b[90mPress any key to continue...\x1b[0m\r\n");
                             let _ = stdout.flush();
                             std::thread::sleep(std::time::Duration::from_millis(200));
                             while event::poll(std::time::Duration::from_millis(100)).unwrap_or(false) {
