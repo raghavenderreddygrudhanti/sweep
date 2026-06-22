@@ -1,141 +1,135 @@
-# 🧹 Sweep
+# Sweep
 
-**Fast system cleaner for macOS and Linux. 10x faster than shell-based tools.**
-
-Sweep combines CleanMyMac, AppCleaner, DaisyDisk, and iStat Menus into a single 4MB binary — written in Rust, no dependencies, MIT licensed.
+**Fast, intelligent system cleaner for macOS and Linux. Written in Rust.**
 
 ```bash
-brew install sweep   # coming soon
+cargo install sweep-cli
 # or
-curl -fsSL https://sweep.dev/install.sh | bash
+brew install raghavenderreddygrudhanti/tap/sweep
 ```
 
 ## Why Sweep?
 
 | | Sweep | Mole | CleanMyMac |
 |---|---|---|---|
-| Price | Free | Free CLI / $$ app | $$$$ subscription |
-| Platform | macOS + Linux | macOS only | macOS only |
-| Speed | Parallel Rust (3-5s scan) | Shell scripts (30-60s) | Slow GUI |
-| AI/ML aware | ✅ HuggingFace, Ollama, torch | ❌ | ❌ |
-| Docker cleanup | ✅ | ❌ | ❌ |
-| Dependencies | None (single binary) | Shell + Go + Homebrew | Full app bundle |
-| License | MIT | GPL-3 | Proprietary |
-| Undo/recovery | Moves to Trash (Finder) | Moves to Trash | Proprietary |
+| Price | **Free** | Free CLI / $$ app | $90/year |
+| Clean locations | **106** | ~60 | ~80 |
+| Platform | **macOS + Linux** | macOS only | macOS only |
+| Binary size | **2.9 MB** | ~15 MB | 180 MB |
+| Speed | **3-5 seconds** | 30-60 seconds | Slow GUI |
+| Duplicate finder | **Yes** | No | Yes |
+| Watch mode (bg monitor) | **Yes (unique)** | No | No |
+| Timeline (what grew) | **Yes (unique)** | No | No |
+| Smart recommendations | **Scored engine** | Basic | Basic |
+| Archive old files | **Yes (unique)** | No | No |
+| AI analysis (Ollama) | **Optional** | No | No |
+| Orphan detection | **Yes** | Yes | Yes |
+| Whitelist/protected paths | **Yes** | Yes | No |
+| JSON output for scripting | **Yes** | Yes | No |
+| Operation audit log | **Yes** | Yes | No |
+| Cross-platform | **Yes** | No | No |
+| Open source | **MIT** | GPL-3 | Proprietary |
 
 ## Quick Start
 
 ```bash
 sweep              # Interactive menu
-sweep scan ~       # Analyze disk (interactive explorer)
-sweep clean        # Clean system caches
-sweep ai           # Clean AI/ML caches (HuggingFace, Ollama)
-sweep dev          # Clean build artifacts (node_modules, target)
-sweep docker       # Clean Docker junk
+sweep clean        # Clean all caches, logs, build artifacts (106 locations)
+sweep dupes        # Find duplicate files
+sweep recommend    # Smart recommendations with scoring engine
 sweep uninstall    # Remove apps + remnants
-sweep optimize     # Flush DNS, rebuild caches
-sweep installer    # Remove .dmg/.pkg files
-sweep status       # Real-time system monitor
+sweep scan ~       # Disk explorer
+sweep timeline     # What grew or shrank since last check
+sweep watch        # Background monitor, alert when disk is low
+sweep optimize     # Refresh system caches and services
+sweep status       # Real-time system health dashboard
+sweep --whitelist  # View/manage protected paths
 ```
 
-Add `--dry-run` to any command to preview without deleting.
+Add `--dry-run` to preview without deleting. Add `--json` for scripting output.
 
 ## Features
 
-### 📊 Disk Analyzer (Interactive)
-- Browse directories with arrow keys
-- Progressive scanning (shows results as they arrive)
-- Multi-select with Space, bulk delete
-- Moves to Trash via Finder (recoverable)
-- Size cache for instant 2nd load
+### Clean (106 locations, 11 categories)
+- System (crash reports, logs, GPU caches)
+- Browsers (Chrome, Safari, Firefox, Brave, Arc, Edge — skips running browsers)
+- Cloud & Office (Teams, Outlook, Slack, Zoom, iCloud, OneDrive)
+- Developer tools (npm, Yarn, pnpm, Bun, pip, uv, Conda, Cargo, Go, Gradle, Maven, Ruby, Xcode, Docker, Homebrew)
+- AI/ML (HuggingFace, Ollama, PyTorch, LM Studio, Cursor, Claude, Codex, Copilot)
+- IDEs (JetBrains, VS Code, Sublime, Kiro)
+- Media (Spotify, Apple Music, Podcasts, Photos)
+- Communication (Discord, Slack, Zoom, Messages, FaceTime)
+- Time Machine (local snapshots, iOS backups)
+- Misc system (CrashReporter, App Store, Spotlight)
+- Orphan detection (leftover app data, broken launch agents, orphan dotfiles)
 
-### 🤖 AI/ML Cache Cleaning (Unique to Sweep)
-Finds and cleans:
-- HuggingFace models & datasets (~20-100 GB)
-- Ollama downloaded models
-- PyTorch/TensorFlow caches
-- Conda/pip package caches
-- LM Studio models
+### Duplicate Finder
+- Parallel hashing across all CPU cores
+- Content-based (not filename) — zero false positives
+- Select folders to scan (Documents, Downloads, Pictures, Photos Library)
+- Choose minimum file size (100 KB to 50 MB)
+- Keeps newest copy, deletes rest
 
-### ⚡ Developer Artifact Cleaning
-- `node_modules` older than 7 days
-- Cargo `target/` directories
-- Python `.venv` environments
-- Build/dist directories
-- Selectable — choose what to keep
+### Smart Recommendations (Scoring Engine)
+```
+Score = Size + Age + Regenerability + Safety signals
 
-### 💻 Real-time System Monitor
-- CPU per-core usage
-- Memory + swap
-- Disk space
-- Battery health + cycles
-- Top processes (with "hot" indicator)
-- Auto-refreshes every second
++30 if > 1 GB
++20 if not accessed 90+ days
++20 if regenerable cache
++15 if app already installed
+-40 if recently used
+-60 if user-owned
+-100 if sensitive (keychains, .ssh)
 
-### 🗑 App Uninstaller
-- Finds all installed apps with sizes
-- Detects remnants (preferences, caches, launch agents)
-- Shows leftover count per app
+80+ = SAFE CLEAN | 40-79 = REVIEW | <40 = KEEP
+```
+- Archive option for old Documents/Desktop files (compress + free space)
+- Impact prediction (free space before/after)
+- Whitelist enforced as hard pre-filter
 
-### ⚙ System Optimization
-- Flush DNS cache
-- Rebuild Launch Services
-- Refresh Dock & Finder
-- Remove .DS_Store files
-- Clean browser caches
+### Watch Mode
+- Background disk monitor
+- Checks every 5 minutes
+- macOS notification when space drops below threshold
+- Press `q` to stop
+
+### Timeline
+- Shows what grew or shrank since last scan
+- Parallel scanning with real-time progress
+- Checkbox-style TUI
 
 ## Architecture
 
 ```
 src/
-├── main.rs              CLI entry (clap)
-├── cache.rs             Size cache (instant 2nd load)
-├── history.rs           Operation log (undo support)
-├── scanner/
-│   └── mod.rs           Parallel filesystem scanner
-├── cleaners/
-│   ├── system.rs        System cache paths
-│   ├── browser.rs       Chrome, Safari, Firefox, Brave, Arc, Edge
-│   ├── ai.rs            HuggingFace, Ollama, torch, conda, pip
-│   ├── dev.rs           node_modules, target, .venv, build
-│   ├── docker.rs        Docker system prune
-│   ├── apps.rs          App uninstaller + remnant finder
-│   ├── trash.rs         Trash management
-│   └── optimize.rs      System optimization tasks
-└── commands/
-    ├── interactive.rs   Arrow-key menu
-    ├── scan.rs          Interactive disk explorer
-    ├── clean.rs         System cache cleaner
-    ├── ai.rs            AI/ML cache cleaner
-    ├── dev.rs           Build artifact cleaner (selectable)
-    ├── docker.rs        Docker cleanup
-    ├── uninstall.rs     App uninstaller
-    ├── optimize.rs      System optimization
-    ├── installer.rs     .dmg/.pkg finder
-    ├── status.rs        Real-time system monitor
-    └── footer.rs        Shared quit/continue prompt
+├── main.rs              CLI (clap)
+├── scanner/             Parallel filesystem scanner (walkdir + rayon)
+├── cleaners/            106 clean locations, orphan detection
+├── commands/            All UI screens (TUI + progressive)
+├── recommend_engine.rs  Scoring algorithm
+├── whitelist.rs         Protected paths
+├── oplog.rs             Operation audit log
+├── cache.rs             Size cache for timeline
+└── history.rs           Operation history
 ```
 
-## Building
+Single binary, no runtime dependencies. Built with:
+- walkdir + rayon (parallel scanning)
+- crossterm (TUI)
+- sysinfo (system monitoring)
+- clap (CLI)
 
-```bash
-# Requires Rust 1.70+
-cargo build --release
-./target/release/sweep
-```
+## Safety
 
-## Contributing
-
-We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
-
-Easy ways to help:
-- 🐧 **Linux support** — add Linux-specific paths and optimizations
-- 🧹 **New cleaners** — Xcode, Android Studio, JetBrains, VS Code
-- 🎨 **UI improvements** — better TUI rendering, color themes
-- 📦 **Packaging** — Homebrew formula, AUR package, Debian .deb
-- 🧪 **Tests** — unit tests for cleaners and scanner
-- 📖 **Docs** — better examples, screenshots, video demo
+- Whitelist: 21 default protected patterns (Documents, .ssh, keychains, etc.)
+- Never touches browser profiles (only Library/Caches paths)
+- Skips running browsers
+- Refuses to run as root (unless --force)
+- Symlinks never followed
+- Silent skip on permission denied (no password prompts)
+- All operations logged to ~/.sweep/operations.log
 
 ## License
 
-MIT — use it however you want.
+MIT
