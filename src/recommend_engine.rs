@@ -8,18 +8,18 @@ use std::time::SystemTime;
 /// Classification of a path.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ItemClass {
-    Regenerable,  // caches, logs, build folders
-    Replaceable,  // installers, old zips, duplicates
-    UserOwned,    // documents, photos, projects
-    Sensitive,    // browser profiles, cookies, keychains
+    Regenerable, // caches, logs, build folders
+    Replaceable, // installers, old zips, duplicates
+    UserOwned,   // documents, photos, projects
+    Sensitive,   // browser profiles, cookies, keychains
 }
 
 /// Recommended action.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Action {
-    SafeClean,  // 80+ score
-    Review,     // 40-79 score
-    Keep,       // <40 score
+    SafeClean, // 80+ score
+    Review,    // 40-79 score
+    Keep,      // <40 score
 }
 
 /// A scored recommendation item.
@@ -37,23 +37,49 @@ pub struct ScoredItem {
 
 /// Hard-blocked paths — NEVER recommend deleting these.
 const NEVER_TOUCH: &[&str] = &[
-    "Documents", "Desktop", "Pictures", "Movies", "Music",
-    "Library/Keychains", "Library/Cookies", "Library/Safari/LocalStorage",
-    "Library/Messages", "Library/Mail", "Library/Calendars",
-    ".ssh", ".gnupg", ".aws", ".kube",
+    "Documents",
+    "Desktop",
+    "Pictures",
+    "Movies",
+    "Music",
+    "Library/Keychains",
+    "Library/Cookies",
+    "Library/Safari/LocalStorage",
+    "Library/Messages",
+    "Library/Mail",
+    "Library/Calendars",
+    ".ssh",
+    ".gnupg",
+    ".aws",
+    ".kube",
 ];
 
 /// Known regenerable patterns.
 const REGENERABLE: &[&str] = &[
-    "Library/Caches", "Library/Logs", ".cache", ".gradle/caches",
-    ".m2/repository", ".npm/_cacache", ".cargo/registry/cache",
-    "Library/Developer/Xcode/DerivedData", ".cache/huggingface",
-    ".ollama/models", ".cache/torch", ".cache/pip", ".cache/uv",
-    "Library/Caches/pip", "Library/Caches/CocoaPods",
-    "Library/Caches/Homebrew", "Library/Caches/go-build",
-    ".conda/pkgs", "miniconda3/pkgs", "anaconda3/pkgs",
-    ".rustup/downloads", ".cargo/registry/src",
-    ".gradle/wrapper/dists", "go/pkg/mod/cache",
+    "Library/Caches",
+    "Library/Logs",
+    ".cache",
+    ".gradle/caches",
+    ".m2/repository",
+    ".npm/_cacache",
+    ".cargo/registry/cache",
+    "Library/Developer/Xcode/DerivedData",
+    ".cache/huggingface",
+    ".ollama/models",
+    ".cache/torch",
+    ".cache/pip",
+    ".cache/uv",
+    "Library/Caches/pip",
+    "Library/Caches/CocoaPods",
+    "Library/Caches/Homebrew",
+    "Library/Caches/go-build",
+    ".conda/pkgs",
+    "miniconda3/pkgs",
+    "anaconda3/pkgs",
+    ".rustup/downloads",
+    ".cargo/registry/src",
+    ".gradle/wrapper/dists",
+    "go/pkg/mod/cache",
     "Library/Developer/CoreSimulator/Caches",
 ];
 
@@ -65,7 +91,8 @@ pub fn score_item(path: &Path, label: &str, size: u64) -> ScoredItem {
         return ScoredItem {
             path: path.to_path_buf(),
             label: label.to_string(),
-            size, score: -200,
+            size,
+            score: -200,
             action: Action::Keep,
             class: ItemClass::Sensitive,
             reasons: vec!["Protected by whitelist".into()],
@@ -89,7 +116,8 @@ pub fn score_item(path: &Path, label: &str, size: u64) -> ScoredItem {
         return ScoredItem {
             path: path.to_path_buf(),
             label: label.to_string(),
-            size, score: -100,
+            size,
+            score: -100,
             action: Action::Keep,
             class,
             reasons: vec!["Sensitive data — never delete".into()],
@@ -102,16 +130,20 @@ pub fn score_item(path: &Path, label: &str, size: u64) -> ScoredItem {
     }
 
     // 3. Size scoring
-    if size > 5 * 1024 * 1024 * 1024 { // >5GB
+    if size > 5 * 1024 * 1024 * 1024 {
+        // >5GB
         score += 35;
         reasons.push("Very large (>5 GB)".into());
-    } else if size > 1024 * 1024 * 1024 { // >1GB
+    } else if size > 1024 * 1024 * 1024 {
+        // >1GB
         score += 30;
         reasons.push("Large (>1 GB)".into());
-    } else if size > 500 * 1024 * 1024 { // >500MB
+    } else if size > 500 * 1024 * 1024 {
+        // >500MB
         score += 20;
         reasons.push("Moderate size (>500 MB)".into());
-    } else if size > 100 * 1024 * 1024 { // >100MB
+    } else if size > 100 * 1024 * 1024 {
+        // >100MB
         score += 10;
         reasons.push("Notable size (>100 MB)".into());
     }
@@ -167,7 +199,12 @@ pub fn score_item(path: &Path, label: &str, size: u64) -> ScoredItem {
     ScoredItem {
         path: path.to_path_buf(),
         label: label.to_string(),
-        size, score, action, class, reasons, age_days,
+        size,
+        score,
+        action,
+        class,
+        reasons,
+        age_days,
     }
 }
 
@@ -176,9 +213,12 @@ fn classify(rel_path: &str) -> ItemClass {
     // Check hard blocks first
     for blocked in NEVER_TOUCH {
         if rel_path.starts_with(blocked) {
-            if rel_path.contains("Keychains") || rel_path.contains("Cookies")
-                || rel_path.contains("Sessions") || rel_path.contains(".ssh")
-                || rel_path.contains(".gnupg") {
+            if rel_path.contains("Keychains")
+                || rel_path.contains("Cookies")
+                || rel_path.contains("Sessions")
+                || rel_path.contains(".ssh")
+                || rel_path.contains(".gnupg")
+            {
                 return ItemClass::Sensitive;
             }
             return ItemClass::UserOwned;
@@ -220,9 +260,7 @@ fn is_installer(path: &Path) -> bool {
 
 /// Check if the installer's corresponding app is installed.
 fn installer_app_exists(path: &Path) -> bool {
-    let name = path.file_stem()
-        .and_then(|n| n.to_str())
-        .unwrap_or("");
+    let name = path.file_stem().and_then(|n| n.to_str()).unwrap_or("");
 
     // Strip common suffixes like "-installer", "_setup", version numbers
     let clean_name = name
@@ -248,8 +286,18 @@ fn installer_app_exists(path: &Path) -> bool {
 /// well-known regenerable directory names.
 fn is_in_gitignore(path: &Path) -> bool {
     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    matches!(name, "node_modules" | "target" | ".venv" | "__pycache__"
-        | "dist" | "build" | ".next" | ".nuxt" | "vendor")
+    matches!(
+        name,
+        "node_modules"
+            | "target"
+            | ".venv"
+            | "__pycache__"
+            | "dist"
+            | "build"
+            | ".next"
+            | ".nuxt"
+            | "vendor"
+    )
 }
 
 /// Action label for display.
@@ -264,9 +312,9 @@ impl Action {
 
     pub fn color(&self) -> &str {
         match self {
-            Action::SafeClean => "\x1b[32m",  // green
-            Action::Review => "\x1b[33m",     // yellow
-            Action::Keep => "\x1b[90m",       // gray
+            Action::SafeClean => "\x1b[32m", // green
+            Action::Review => "\x1b[33m",    // yellow
+            Action::Keep => "\x1b[90m",      // gray
         }
     }
 

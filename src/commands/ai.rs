@@ -1,9 +1,9 @@
+use crate::cleaners::ai;
+use crate::cleaners::DeleteMode;
+use crate::scanner;
 use bytesize::ByteSize;
 use colored::*;
 use std::io::{self, Write};
-use crate::scanner;
-use crate::cleaners::ai;
-use crate::cleaners::DeleteMode;
 
 pub fn run(dry_run: bool, mode: DeleteMode) {
     // Clear screen for a fresh view
@@ -11,14 +11,19 @@ pub fn run(dry_run: bool, mode: DeleteMode) {
     let _ = io::stdout().flush();
 
     let dry_label = if dry_run { " (preview)" } else { "" };
-    super::ui::print_header(&format!("\x1b[1;35m\u{1f916} AI/ML Cache Clean\x1b[0m{}", dry_label));
+    super::ui::print_header(&format!(
+        "\x1b[1;35m\u{1f916} AI/ML Cache Clean\x1b[0m{}",
+        dry_label
+    ));
 
     let caches = ai::ai_cache_paths();
     let mut found: Vec<(&std::path::Path, &str, u64)> = Vec::new();
 
     // Progressive scan with tick marks
     for (path, desc) in &caches {
-        if !path.exists() { continue; }
+        if !path.exists() {
+            continue;
+        }
 
         print!("  \x1b[33m\u{2022}\x1b[0m Checking {}...\r", desc);
         let _ = io::stdout().flush();
@@ -30,8 +35,13 @@ pub fn run(dry_run: bool, mode: DeleteMode) {
             let bar_len = ((size as f64 / 30_000_000_000.0) * 15.0).min(15.0) as usize;
             let bar = "\u{2588}".repeat(bar_len);
             let empty = "\u{2591}".repeat(15usize.saturating_sub(bar_len));
-            println!("  \x1b[32m\u{2713}\x1b[0m \x1b[31m{}{}\x1b[0m {:>9}  {}",
-                bar, empty, ByteSize::b(size).to_string().bold(), desc.cyan());
+            println!(
+                "  \x1b[32m\u{2713}\x1b[0m \x1b[31m{}{}\x1b[0m {:>9}  {}",
+                bar,
+                empty,
+                ByteSize::b(size).to_string().bold(),
+                desc.cyan()
+            );
             println!("    \x1b[90m{}\x1b[0m", path.display());
             found.push((path.as_path(), desc, size));
         }
@@ -69,7 +79,10 @@ pub fn run(dry_run: bool, mode: DeleteMode) {
     }
 
     // Ask confirmation
-    println!("  Total: {}\n", ByteSize::b(total).to_string().bold().green());
+    println!(
+        "  Total: {}\n",
+        ByteSize::b(total).to_string().bold().green()
+    );
     print!("  \x1b[1;33mClean AI/ML caches? (y/n/q):\x1b[0m ");
     let _ = io::stdout().flush();
 
@@ -82,9 +95,13 @@ pub fn run(dry_run: bool, mode: DeleteMode) {
     let proceed = loop {
         if let Ok(crossterm::event::Event::Key(key)) = crossterm::event::read() {
             match key.code {
-                crossterm::event::KeyCode::Char('y') | crossterm::event::KeyCode::Char('Y') => break true,
-                crossterm::event::KeyCode::Char('n') | crossterm::event::KeyCode::Char('N')
-                | crossterm::event::KeyCode::Char('q') | crossterm::event::KeyCode::Char('Q')
+                crossterm::event::KeyCode::Char('y') | crossterm::event::KeyCode::Char('Y') => {
+                    break true
+                }
+                crossterm::event::KeyCode::Char('n')
+                | crossterm::event::KeyCode::Char('N')
+                | crossterm::event::KeyCode::Char('q')
+                | crossterm::event::KeyCode::Char('Q')
                 | crossterm::event::KeyCode::Esc => break false,
                 _ => continue, // Ignore Enter and other keys
             }
@@ -110,8 +127,11 @@ pub fn run(dry_run: bool, mode: DeleteMode) {
                 } else {
                     #[cfg(target_os = "macos")]
                     {
-                        let abs = if path.is_absolute() { path.to_path_buf() }
-                            else { std::env::current_dir().unwrap_or_default().join(path) };
+                        let abs = if path.is_absolute() {
+                            path.to_path_buf()
+                        } else {
+                            std::env::current_dir().unwrap_or_default().join(path)
+                        };
                         let script = format!(
                             "tell application \"Finder\" to delete POSIX file \"{}\"",
                             abs.display()
@@ -125,7 +145,9 @@ pub fn run(dry_run: bool, mode: DeleteMode) {
                             .unwrap_or(false)
                     }
                     #[cfg(not(target_os = "macos"))]
-                    { false }
+                    {
+                        false
+                    }
                 }
             }
             DeleteMode::Force => std::fs::remove_dir_all(path).is_ok(),
@@ -135,12 +157,19 @@ pub fn run(dry_run: bool, mode: DeleteMode) {
             crate::history::log_delete(
                 &path.display().to_string(),
                 *size,
-                if mode == DeleteMode::Trash { "trash" } else { "delete" },
+                if mode == DeleteMode::Trash {
+                    "trash"
+                } else {
+                    "delete"
+                },
             );
         }
     }
 
-    println!("  \x1b[1;32m\u{1f389} Done! Freed: {}\x1b[0m\n", ByteSize::b(freed).to_string().bold());
+    println!(
+        "  \x1b[1;32m\u{1f389} Done! Freed: {}\x1b[0m\n",
+        ByteSize::b(freed).to_string().bold()
+    );
 
     // Pause so user can see results
     println!("  \x1b[90mPress any key to continue...\x1b[0m");

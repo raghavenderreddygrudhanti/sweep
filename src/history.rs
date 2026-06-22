@@ -1,9 +1,9 @@
 //! Operation history log — tracks all deletions for undo/audit.
 
-use std::fs::{OpenOptions, create_dir_all};
+use chrono::Local;
+use std::fs::{create_dir_all, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
-use chrono::Local;
 
 const MAX_HISTORY_LINES: usize = 1000;
 
@@ -44,10 +44,9 @@ pub fn show_history() {
         for line in recent {
             let parts: Vec<&str> = line.split('|').collect();
             if parts.len() >= 4 {
-                let size_str = bytesize::ByteSize::b(
-                    parts[2].parse().unwrap_or(0)
-                ).to_string();
-                println!("  {}  {:>10}  {:8}  {}",
+                let size_str = bytesize::ByteSize::b(parts[2].parse().unwrap_or(0)).to_string();
+                println!(
+                    "  {}  {:>10}  {:8}  {}",
                     parts[0], // timestamp
                     size_str,
                     parts[1], // operation

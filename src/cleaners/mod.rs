@@ -1,22 +1,22 @@
 //! Cleaner modules — each knows about specific types of junk.
 
-pub mod system;
-pub mod dev;
 pub mod ai;
-pub mod docker;
-pub mod comprehensive;
-pub mod browser;
 pub mod apps;
-pub mod trash;
-pub mod optimize;
-pub mod xcode;
-pub mod jetbrains;
 pub mod apps_cache;
+pub mod browser;
+pub mod comprehensive;
+pub mod dev;
+pub mod docker;
 pub mod homebrew;
+pub mod jetbrains;
+pub mod optimize;
 pub mod orphans;
+pub mod system;
+pub mod trash;
+pub mod xcode;
 
-use std::path::Path;
 use std::fs;
+use std::path::Path;
 
 use crate::error::{SweepError, SweepResult};
 use crate::history;
@@ -49,7 +49,11 @@ pub fn remove_dir(path: &Path, dry_run: bool, mode: DeleteMode) -> u64 {
             history::log_delete(
                 &path.display().to_string(),
                 size,
-                if mode == DeleteMode::Trash { "trash" } else { "delete" },
+                if mode == DeleteMode::Trash {
+                    "trash"
+                } else {
+                    "delete"
+                },
             );
             size
         }
@@ -79,7 +83,11 @@ pub fn remove_file(path: &Path, dry_run: bool, mode: DeleteMode) -> u64 {
             history::log_delete(
                 &path.display().to_string(),
                 size,
-                if mode == DeleteMode::Trash { "trash" } else { "delete" },
+                if mode == DeleteMode::Trash {
+                    "trash"
+                } else {
+                    "delete"
+                },
             );
             size
         }

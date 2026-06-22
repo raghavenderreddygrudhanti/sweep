@@ -1,8 +1,8 @@
 //! Orphan detection — finds leftover files from apps that are no longer installed.
 //! Checks Application Support, LaunchAgents, Preferences, and dotfiles.
 
-use std::path::PathBuf;
 use std::fs;
+use std::path::PathBuf;
 
 /// An orphaned item (leftover from a deleted app).
 pub struct Orphan {
@@ -46,16 +46,25 @@ pub fn find_orphans() -> Vec<Orphan> {
         if let Ok(entries) = fs::read_dir(&app_support) {
             for entry in entries.flatten() {
                 let p = entry.path();
-                if !p.is_dir() { continue; }
+                if !p.is_dir() {
+                    continue;
+                }
 
-                let name = p.file_name().unwrap_or_default().to_string_lossy().to_string();
+                let name = p
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
                 // Skip known system dirs
-                if is_system_app_support(&name) { continue; }
+                if is_system_app_support(&name) {
+                    continue;
+                }
 
                 // Check if matching app exists
                 if !has_matching_app(&name, &installed_apps) {
                     let size = crate::scanner::scan_size_native(&p);
-                    if size > 1024 * 1024 { // Only report > 1MB orphans
+                    if size > 1024 * 1024 {
+                        // Only report > 1MB orphans
                         let age = file_age_days(&p);
                         orphans.push(Orphan {
                             path: p,
@@ -76,8 +85,14 @@ pub fn find_orphans() -> Vec<Orphan> {
         if let Ok(entries) = fs::read_dir(&launch_agents) {
             for entry in entries.flatten() {
                 let p = entry.path();
-                let name = p.file_name().unwrap_or_default().to_string_lossy().to_string();
-                if !name.ends_with(".plist") { continue; }
+                let name = p
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                if !name.ends_with(".plist") {
+                    continue;
+                }
 
                 // Check if the program referenced in the plist exists
                 if let Ok(content) = fs::read_to_string(&p) {
@@ -102,16 +117,23 @@ pub fn find_orphans() -> Vec<Orphan> {
     if let Ok(entries) = fs::read_dir(&home) {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().to_string();
-            if !name.starts_with('.') { continue; }
-            if !entry.path().is_dir() { continue; }
+            if !name.starts_with('.') {
+                continue;
+            }
+            if !entry.path().is_dir() {
+                continue;
+            }
             // Skip common/system dotfiles
-            if is_common_dotfile(&name) { continue; }
+            if is_common_dotfile(&name) {
+                continue;
+            }
 
             // Check if owning binary exists in PATH
             let bin_name = name.trim_start_matches('.');
             if !binary_in_path(bin_name) && !has_matching_app(bin_name, &installed_apps) {
                 let size = crate::scanner::scan_size_native(&entry.path());
-                if size > 100 * 1024 { // > 100KB
+                if size > 100 * 1024 {
+                    // > 100KB
                     let age = file_age_days(&entry.path());
                     orphans.push(Orphan {
                         path: entry.path(),
@@ -133,10 +155,18 @@ pub fn find_orphans() -> Vec<Orphan> {
 fn get_installed_app_ids() -> Vec<String> {
     let mut ids = Vec::new();
 
-    for dir in &["/Applications", &format!("{}/Applications", dirs::home_dir().unwrap_or_default().display())] {
+    for dir in &[
+        "/Applications",
+        &format!(
+            "{}/Applications",
+            dirs::home_dir().unwrap_or_default().display()
+        ),
+    ] {
         if let Ok(entries) = fs::read_dir(dir) {
             for entry in entries.flatten() {
-                let name = entry.file_name().to_string_lossy()
+                let name = entry
+                    .file_name()
+                    .to_string_lossy()
                     .trim_end_matches(".app")
                     .to_lowercase();
                 ids.push(name);
@@ -149,25 +179,63 @@ fn get_installed_app_ids() -> Vec<String> {
 
 fn has_matching_app(name: &str, installed: &[String]) -> bool {
     let lower = name.to_lowercase();
-    installed.iter().any(|app| {
-        app.contains(&lower) || lower.contains(app)
-    })
+    installed
+        .iter()
+        .any(|app| app.contains(&lower) || lower.contains(app))
 }
 
 fn is_system_app_support(name: &str) -> bool {
-    let system = ["com.apple", "Apple", "AddressBook", "CallHistoryDB",
-        "CloudDocs", "CoreData", "CrashReporter", "Dock", "FileProvider",
-        "Knowledge", "MobileSync", "SyncServices", "Spotlight",
-        "icdd", "Quick Look", "Accessibility"];
+    let system = [
+        "com.apple",
+        "Apple",
+        "AddressBook",
+        "CallHistoryDB",
+        "CloudDocs",
+        "CoreData",
+        "CrashReporter",
+        "Dock",
+        "FileProvider",
+        "Knowledge",
+        "MobileSync",
+        "SyncServices",
+        "Spotlight",
+        "icdd",
+        "Quick Look",
+        "Accessibility",
+    ];
     system.iter().any(|s| name.contains(s))
 }
 
 fn is_common_dotfile(name: &str) -> bool {
-    let common = [".Trash", ".cache", ".config", ".local", ".ssh", ".gnupg",
-        ".aws", ".kube", ".docker", ".git", ".gitconfig", ".zshrc", ".bashrc",
-        ".bash_profile", ".profile", ".zprofile", ".npm", ".cargo", ".rustup",
-        ".gradle", ".m2", ".vscode", ".kiro", ".CFUserTextEncoding",
-        ".DS_Store", ".Spotlight-V100", ".fseventsd"];
+    let common = [
+        ".Trash",
+        ".cache",
+        ".config",
+        ".local",
+        ".ssh",
+        ".gnupg",
+        ".aws",
+        ".kube",
+        ".docker",
+        ".git",
+        ".gitconfig",
+        ".zshrc",
+        ".bashrc",
+        ".bash_profile",
+        ".profile",
+        ".zprofile",
+        ".npm",
+        ".cargo",
+        ".rustup",
+        ".gradle",
+        ".m2",
+        ".vscode",
+        ".kiro",
+        ".CFUserTextEncoding",
+        ".DS_Store",
+        ".Spotlight-V100",
+        ".fseventsd",
+    ];
     common.contains(&name)
 }
 

@@ -2,14 +2,14 @@
 //! TUI: all items shown at once, scanned in parallel, checkbox-style progress.
 
 use crate::cache;
-use crate::output::{self, TimelineOutput, TimelineEntry};
+use crate::output::{self, TimelineEntry, TimelineOutput};
 use crate::scanner;
-use colored::Colorize;
-use std::sync::{Arc, Mutex};
-use std::io::{self, Write};
-use crossterm::{terminal, cursor, execute, event};
-use crossterm::event::Event;
 use bytesize::ByteSize;
+use colored::Colorize;
+use crossterm::event::Event;
+use crossterm::{cursor, event, execute, terminal};
+use std::io::{self, Write};
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
 struct TimelineItem {
@@ -26,13 +26,19 @@ pub fn run() {
 
     if cached.is_empty() {
         if output::is_json() {
-            output::print_json(&TimelineOutput { changes: vec![], total_growth: 0 });
+            output::print_json(&TimelineOutput {
+                changes: vec![],
+                total_growth: 0,
+            });
         } else {
             print!("\x1b[2J\x1b[H");
             let _ = io::stdout().flush();
             super::ui::print_header("\x1b[1;34m\u{1f4c8} Space Timeline\x1b[0m");
             println!("  No previous scan data found.");
-            println!("  Run {} first to establish a baseline.\n", "sweep scan ~".bold());
+            println!(
+                "  Run {} first to establish a baseline.\n",
+                "sweep scan ~".bold()
+            );
             wait_for_key();
         }
         return;
@@ -45,7 +51,8 @@ pub fn run() {
 
     // Filter to large dirs
     let home_str = crate::error::home_or_exit().display().to_string();
-    let paths: Vec<(String, u64)> = cached.iter()
+    let paths: Vec<(String, u64)> = cached
+        .iter()
         .filter(|(p, &s)| s > 100 * 1024 * 1024 && std::path::Path::new(p.as_str()).exists())
         .map(|(k, &v)| (k.clone(), v))
         .collect();
@@ -61,23 +68,26 @@ pub fn run() {
 
     // Build items
     let items: Arc<Mutex<Vec<TimelineItem>>> = Arc::new(Mutex::new(
-        paths.iter().map(|(p, prev)| {
-            let short = p.replace(&home_str, "~");
-            // Truncate safely (char boundary, pad with spaces)
-            let short = if short.chars().count() > 28 {
-                format!("{:.28}...", short)
-            } else {
-                format!("{:<31}", short)
-            };
-            TimelineItem {
-                short,
-                path: p.clone(),
-                prev_size: *prev,
-                current_size: 0,
-                delta: 0,
-                done: false,
-            }
-        }).collect()
+        paths
+            .iter()
+            .map(|(p, prev)| {
+                let short = p.replace(&home_str, "~");
+                // Truncate safely (char boundary, pad with spaces)
+                let short = if short.chars().count() > 28 {
+                    format!("{:.28}...", short)
+                } else {
+                    format!("{:<31}", short)
+                };
+                TimelineItem {
+                    short,
+                    path: p.clone(),
+                    prev_size: *prev,
+                    current_size: 0,
+                    delta: 0,
+                    done: false,
+                }
+            })
+            .collect(),
     ));
 
     let total_count = paths.len();
@@ -98,7 +108,9 @@ pub fn run() {
             handles.push(std::thread::spawn(move || {
                 loop {
                     let i = idx.fetch_add(1, Ordering::SeqCst);
-                    if i >= total_count { break; }
+                    if i >= total_count {
+                        break;
+                    }
 
                     let path_str = items_w.lock().unwrap()[i].path.clone();
                     let size = scanner::scan_size_native(std::path::Path::new(&path_str));
@@ -134,9 +146,14 @@ pub fn run() {
         let mut out = String::new();
 
         if all_done {
-            out.push_str(&super::ui::tui_header("\x1b[34m\u{1f4c8} Space Timeline\x1b[0m"));
+            out.push_str(&super::ui::tui_header(
+                "\x1b[34m\u{1f4c8} Space Timeline\x1b[0m",
+            ));
         } else {
-            out.push_str(&super::ui::tui_header_animated("\x1b[34m\u{1f4c8} Space Timeline\x1b[0m", frame));
+            out.push_str(&super::ui::tui_header_animated(
+                "\x1b[34m\u{1f4c8} Space Timeline\x1b[0m",
+                frame,
+            ));
         }
 
         // Show all items with checkbox style
@@ -156,7 +173,10 @@ pub fn run() {
         let end = (scroll + max_visible).min(total_count);
 
         if scroll > 0 {
-            out.push_str(&format!("    \x1b[90m\u{2191} {} more above\x1b[0m\r\n", scroll));
+            out.push_str(&format!(
+                "    \x1b[90m\u{2191} {} more above\x1b[0m\r\n",
+                scroll
+            ));
         }
 
         for i in scroll..end {
@@ -166,24 +186,36 @@ pub fn run() {
                 if abs_delta > 50 * 1024 * 1024 {
                     let size_str = ByteSize::b(abs_delta).to_string();
                     if item.delta > 0 {
-                        out.push_str(&format!("  \x1b[32m\u{2611}\x1b[0m \x1b[31m\u{25b2} +{:<9}\x1b[0m {}\r\n",
-                            size_str, item.short));
+                        out.push_str(&format!(
+                            "  \x1b[32m\u{2611}\x1b[0m \x1b[31m\u{25b2} +{:<9}\x1b[0m {}\r\n",
+                            size_str, item.short
+                        ));
                     } else {
-                        out.push_str(&format!("  \x1b[32m\u{2611}\x1b[0m \x1b[32m\u{25bc} -{:<9}\x1b[0m {}\r\n",
-                            size_str, item.short));
+                        out.push_str(&format!(
+                            "  \x1b[32m\u{2611}\x1b[0m \x1b[32m\u{25bc} -{:<9}\x1b[0m {}\r\n",
+                            size_str, item.short
+                        ));
                     }
                 } else {
-                    out.push_str(&format!("  \x1b[32m\u{2611}\x1b[0m \x1b[90m\u{2500} no change  {}\x1b[0m\r\n",
-                        item.short));
+                    out.push_str(&format!(
+                        "  \x1b[32m\u{2611}\x1b[0m \x1b[90m\u{2500} no change  {}\x1b[0m\r\n",
+                        item.short
+                    ));
                 }
             } else {
-                out.push_str(&format!("  \x1b[33m\u{2610}\x1b[0m {} {}\r\n",
-                    super::ui::spinner(frame + i), item.short));
+                out.push_str(&format!(
+                    "  \x1b[33m\u{2610}\x1b[0m {} {}\r\n",
+                    super::ui::spinner(frame + i),
+                    item.short
+                ));
             }
         }
 
         if end < total_count {
-            out.push_str(&format!("    \x1b[90m\u{2193} {} more below\x1b[0m\r\n", total_count - end));
+            out.push_str(&format!(
+                "    \x1b[90m\u{2193} {} more below\x1b[0m\r\n",
+                total_count - end
+            ));
         }
 
         // Footer
@@ -191,19 +223,30 @@ pub fn run() {
         out.push_str(super::ui::footer_sep());
         if all_done {
             let total_growth: i64 = snapshot.iter().map(|it| it.delta).sum();
-            let changed = snapshot.iter().filter(|it| it.delta.unsigned_abs() > 50 * 1024 * 1024).count();
+            let changed = snapshot
+                .iter()
+                .filter(|it| it.delta.unsigned_abs() > 50 * 1024 * 1024)
+                .count();
             let total_str = ByteSize::b(total_growth.unsigned_abs()).to_string();
             if changed == 0 {
                 out.push_str("  \x1b[32m\u{2713}\x1b[0m No significant changes\r\n");
             } else if total_growth > 0 {
-                out.push_str(&format!("  {} changed \u{2014} Net: \x1b[1;31m+{}\x1b[0m\r\n", changed, total_str));
+                out.push_str(&format!(
+                    "  {} changed \u{2014} Net: \x1b[1;31m+{}\x1b[0m\r\n",
+                    changed, total_str
+                ));
             } else {
-                out.push_str(&format!("  {} changed \u{2014} Net: \x1b[1;32m-{}\x1b[0m\r\n", changed, total_str));
+                out.push_str(&format!(
+                    "  {} changed \u{2014} Net: \x1b[1;32m-{}\x1b[0m\r\n",
+                    changed, total_str
+                ));
             }
             out.push_str("  \x1b[90mPress any key to exit\x1b[0m\r\n");
         } else {
-            out.push_str(&format!("  \x1b[33m\u{2022}\x1b[0m Scanning... ({}/{}) \x1b[90m[parallel]\x1b[0m\r\n",
-                done_count, total_count));
+            out.push_str(&format!(
+                "  \x1b[33m\u{2022}\x1b[0m Scanning... ({}/{}) \x1b[90m[parallel]\x1b[0m\r\n",
+                done_count, total_count
+            ));
         }
         out.push_str("\x1b[J");
 
@@ -213,7 +256,9 @@ pub fn run() {
         // Input
         if event::poll(std::time::Duration::from_millis(80)).unwrap_or(false) {
             if let Ok(Event::Key(_)) = event::read() {
-                if all_done { break; }
+                if all_done {
+                    break;
+                }
             }
         }
 
@@ -228,22 +273,31 @@ fn run_json(cached: &std::collections::HashMap<String, u64>) {
     let mut changes = Vec::new();
     let mut total_growth: i64 = 0;
     for (path_str, &prev_size) in cached {
-        if prev_size < 100 * 1024 * 1024 { continue; }
+        if prev_size < 100 * 1024 * 1024 {
+            continue;
+        }
         let path = std::path::Path::new(path_str.as_str());
-        if !path.exists() { continue; }
+        if !path.exists() {
+            continue;
+        }
         let current_size = scanner::scan_size_native(path);
         let delta = current_size as i64 - prev_size as i64;
         if delta.unsigned_abs() > 50 * 1024 * 1024 {
             changes.push(TimelineEntry {
-                path: path_str.clone(), previous_size: prev_size,
-                current_size, delta,
+                path: path_str.clone(),
+                previous_size: prev_size,
+                current_size,
+                delta,
                 direction: if delta > 0 { "grew" } else { "shrank" }.to_string(),
             });
             total_growth += delta;
         }
     }
     changes.sort_by(|a, b| b.delta.unsigned_abs().cmp(&a.delta.unsigned_abs()));
-    output::print_json(&TimelineOutput { changes, total_growth });
+    output::print_json(&TimelineOutput {
+        changes,
+        total_growth,
+    });
 }
 
 fn wait_for_key() {

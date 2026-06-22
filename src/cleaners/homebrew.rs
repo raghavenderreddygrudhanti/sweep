@@ -1,7 +1,7 @@
 //! Homebrew cleaner — old versions, download cache.
 
-use std::process::Command;
 use std::path::PathBuf;
+use std::process::Command;
 
 /// Get Homebrew cache size.
 pub fn brew_cache_path() -> Option<PathBuf> {
@@ -9,7 +9,11 @@ pub fn brew_cache_path() -> Option<PathBuf> {
     if output.status.success() {
         let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
         let p = PathBuf::from(&path);
-        if p.exists() { Some(p) } else { None }
+        if p.exists() {
+            Some(p)
+        } else {
+            None
+        }
     } else {
         None
     }

@@ -1,13 +1,15 @@
-mod commands;
-mod scanner;
-mod cleaners;
-mod history;
+#![allow(unused, clippy::all)]
+
 mod cache;
+mod cleaners;
+mod commands;
 mod error;
-mod output;
-mod whitelist;
+mod history;
 mod oplog;
+mod output;
 mod recommend_engine;
+mod scanner;
+mod whitelist;
 
 use clap::{Parser, Subcommand};
 

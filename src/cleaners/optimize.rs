@@ -28,22 +28,12 @@ fn run_cmd(label: &str, cmd: &str, args: &[&str], dry_run: bool) -> bool {
 
 /// Flush DNS cache.
 pub fn flush_dns(dry_run: bool) -> bool {
-    run_cmd(
-        "Flush DNS cache",
-        "dscacheutil",
-        &["-flushcache"],
-        dry_run,
-    )
+    run_cmd("Flush DNS cache", "dscacheutil", &["-flushcache"], dry_run)
 }
 
 /// Rebuild Spotlight index.
 pub fn rebuild_spotlight(dry_run: bool) -> bool {
-    run_cmd(
-        "Rebuild Spotlight index",
-        "mdutil",
-        &["-E", "/"],
-        dry_run,
-    )
+    run_cmd("Rebuild Spotlight index", "mdutil", &["-E", "/"], dry_run)
 }
 
 /// Rebuild Launch Services database.
@@ -112,10 +102,7 @@ pub fn clean_ds_store(dry_run: bool) -> (u64, u64) {
 /// Find and remove installer files (.dmg, .pkg).
 pub fn find_installers() -> Vec<(std::path::PathBuf, u64)> {
     let home = crate::error::home_or_exit();
-    let search_dirs = vec![
-        home.join("Downloads"),
-        home.join("Desktop"),
-    ];
+    let search_dirs = vec![home.join("Downloads"), home.join("Desktop")];
 
     let extensions = ["dmg", "pkg", "iso", "app.zip"];
     let mut found = vec![];

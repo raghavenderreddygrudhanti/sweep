@@ -1,8 +1,8 @@
 //! Test actual deletion against dummy data.
 //! Tests both Trash mode and Force mode.
 
-use std::path::{Path, PathBuf};
 use std::fs;
+use std::path::{Path, PathBuf};
 
 fn test_base() -> PathBuf {
     // Use home dir for trash tests (macOS requires this for Trash to work)
@@ -26,10 +26,17 @@ fn test_scanner_accuracy() {
 
     // project2 has 80MB + 40MB = 120MB
     let expected = 120 * 1024 * 1024;
-    assert_eq!(scanned_size, expected,
-        "Scanner should find 120 MB, found {} MB", scanned_size / (1024 * 1024));
+    assert_eq!(
+        scanned_size,
+        expected,
+        "Scanner should find 120 MB, found {} MB",
+        scanned_size / (1024 * 1024)
+    );
 
-    println!("PASS: Scanner accurately measured {} MB (expected 120 MB)", scanned_size / (1024 * 1024));
+    println!(
+        "PASS: Scanner accurately measured {} MB (expected 120 MB)",
+        scanned_size / (1024 * 1024)
+    );
 }
 
 #[test]

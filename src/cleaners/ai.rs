@@ -8,7 +8,10 @@ pub fn ai_cache_paths() -> Vec<(PathBuf, &'static str)> {
     let home = crate::error::home_or_exit();
 
     vec![
-        (home.join(".cache/huggingface"), "HuggingFace models & datasets"),
+        (
+            home.join(".cache/huggingface"),
+            "HuggingFace models & datasets",
+        ),
         (home.join(".cache/torch"), "PyTorch model cache"),
         (home.join(".cache/pip"), "pip package cache"),
         (home.join(".ollama/models"), "Ollama downloaded models"),

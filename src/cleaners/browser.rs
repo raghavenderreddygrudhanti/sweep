@@ -84,7 +84,9 @@ fn running_process_names() -> Vec<String> {
 }
 
 fn is_running(process_match: &[&str], running: &[String]) -> bool {
-    running.iter().any(|name| process_match.iter().any(|m| name.contains(m)))
+    running
+        .iter()
+        .any(|name| process_match.iter().any(|m| name.contains(m)))
 }
 
 /// All cleanable browser cache locations, excluding browsers that are currently

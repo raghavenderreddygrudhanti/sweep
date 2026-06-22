@@ -1,13 +1,13 @@
 //! Recommend v2 — ranked decision engine.
 //! Scores each item and groups into SAFE CLEAN / REVIEW / KEEP.
 
-use std::io::{self, Write};
-use std::path::PathBuf;
+use crate::output;
+use crate::recommend_engine::{self, Action, ScoredItem};
+use crate::scanner;
 use bytesize::ByteSize;
 use colored::*;
-use crate::scanner;
-use crate::recommend_engine::{self, ScoredItem, Action};
-use crate::output;
+use std::io::{self, Write};
+use std::path::PathBuf;
 
 pub fn run() {
     if output::is_json() {
@@ -27,14 +27,20 @@ pub fn run() {
     let mut items: Vec<ScoredItem> = Vec::new();
 
     for (path, label) in &sources {
-        if !path.exists() { continue; }
+        if !path.exists() {
+            continue;
+        }
 
-        print!("  \x1b[33m{}\x1b[0m {}...\r",
-            super::ui::spinner(items.len()), label);
+        print!(
+            "  \x1b[33m{}\x1b[0m {}...\r",
+            super::ui::spinner(items.len()),
+            label
+        );
         let _ = io::stdout().flush();
 
         let size = scanner::scan_size_native(path);
-        if size < 10 * 1024 * 1024 { // Skip < 10MB
+        if size < 10 * 1024 * 1024 {
+            // Skip < 10MB
             print!("\r\x1b[K");
             continue;
         }
@@ -45,12 +51,18 @@ pub fn run() {
         // Show immediately if actionable
         if scored.action != Action::Keep {
             let short = path.display().to_string().replace(&home_str, "~");
-            let short = if short.len() > 35 { format!("{}...", &short[..32]) } else { short };
-            println!("  {} {:>9}  {} \x1b[90m(score: {})\x1b[0m",
+            let short = if short.len() > 35 {
+                format!("{}...", &short[..32])
+            } else {
+                short
+            };
+            println!(
+                "  {} {:>9}  {} \x1b[90m(score: {})\x1b[0m",
                 scored.action.icon(),
                 ByteSize::b(scored.size).to_string().bold(),
                 short,
-                scored.score);
+                scored.score
+            );
             // Show top reasons
             for reason in scored.reasons.iter().take(2) {
                 println!("    \x1b[90m\u{2713} {}\x1b[0m", reason);
@@ -61,10 +73,12 @@ pub fn run() {
     }
 
     // Separate by action
-    let safe_items: Vec<&ScoredItem> = items.iter()
+    let safe_items: Vec<&ScoredItem> = items
+        .iter()
         .filter(|i| i.action == Action::SafeClean)
         .collect();
-    let review_items: Vec<&ScoredItem> = items.iter()
+    let review_items: Vec<&ScoredItem> = items
+        .iter()
         .filter(|i| i.action == Action::Review)
         .collect();
 
@@ -85,35 +99,55 @@ pub fn run() {
     }
 
     if !safe_items.is_empty() {
-        println!("  \x1b[1;32mSAFE CLEAN:\x1b[0m  {} ({} items)",
+        println!(
+            "  \x1b[1;32mSAFE CLEAN:\x1b[0m  {} ({} items)",
             ByteSize::b(safe_total).to_string().green().bold(),
-            safe_items.len());
+            safe_items.len()
+        );
         println!("  \x1b[90mAll regenerable, high confidence, no risk.\x1b[0m");
     }
     if !review_items.is_empty() {
-        println!("  \x1b[1;33mREVIEW:\x1b[0m      {} ({} items)",
+        println!(
+            "  \x1b[1;33mREVIEW:\x1b[0m      {} ({} items)",
             ByteSize::b(review_total).to_string().yellow().bold(),
-            review_items.len());
+            review_items.len()
+        );
         println!("  \x1b[90mMight be safe, check before deleting.\x1b[0m");
     }
 
     // Show archive candidates
     if !archive_candidates.is_empty() {
         let estimated_savings = archive_total * 60 / 100;
-        println!("  \x1b[1;34mARCHIVE:\x1b[0m     {} ({} files, not opened 6+ months)",
+        println!(
+            "  \x1b[1;34mARCHIVE:\x1b[0m     {} ({} files, not opened 6+ months)",
             ByteSize::b(archive_total).to_string().blue().bold(),
-            archive_candidates.len());
-        println!("  \x1b[90mEstimated savings after compression: ~{}\x1b[0m",
-            ByteSize::b(estimated_savings));
+            archive_candidates.len()
+        );
+        println!(
+            "  \x1b[90mEstimated savings after compression: ~{}\x1b[0m",
+            ByteSize::b(estimated_savings)
+        );
         println!();
         for (idx, (path, size, age)) in archive_candidates.iter().enumerate().take(10) {
             let display = path.display().to_string().replace(&home_str, "~");
-            let short = if display.len() > 40 { format!("...{}", &display[display.len()-37..]) } else { display };
-            println!("    \x1b[34m{}.\x1b[0m {:>8}  {} \x1b[90m({} months)\x1b[0m",
-                idx + 1, ByteSize::b(*size), short, age / 30);
+            let short = if display.len() > 40 {
+                format!("...{}", &display[display.len() - 37..])
+            } else {
+                display
+            };
+            println!(
+                "    \x1b[34m{}.\x1b[0m {:>8}  {} \x1b[90m({} months)\x1b[0m",
+                idx + 1,
+                ByteSize::b(*size),
+                short,
+                age / 30
+            );
         }
         if archive_candidates.len() > 10 {
-            println!("    \x1b[90m... +{} more\x1b[0m", archive_candidates.len() - 10);
+            println!(
+                "    \x1b[90m... +{} more\x1b[0m",
+                archive_candidates.len() - 10
+            );
         }
     }
     println!();
@@ -122,13 +156,20 @@ pub fn run() {
     let total = safe_total + review_total;
     if total > 0 {
         let disks = sysinfo::Disks::new_with_refreshed_list();
-        if let Some(disk) = disks.list().iter().find(|d| d.mount_point().to_string_lossy() == "/") {
+        if let Some(disk) = disks
+            .list()
+            .iter()
+            .find(|d| d.mount_point().to_string_lossy() == "/")
+        {
             let free = disk.available_space();
             let after = free + safe_total;
             println!("  \x1b[1mImpact:\x1b[0m");
             println!("    Free now:    {}", ByteSize::b(free));
-            println!("    After clean: \x1b[32m{}\x1b[0m (+{})",
-                ByteSize::b(after), ByteSize::b(safe_total));
+            println!(
+                "    After clean: \x1b[32m{}\x1b[0m (+{})",
+                ByteSize::b(after),
+                ByteSize::b(safe_total)
+            );
             println!("    Risk:        \x1b[32mNone\x1b[0m (all regenerable caches)");
             println!();
         }
@@ -138,11 +179,17 @@ pub fn run() {
     if !safe_items.is_empty() || !archive_candidates.is_empty() {
         println!("  \x1b[1mActions:\x1b[0m");
         if !safe_items.is_empty() {
-            println!("    \x1b[32ma\x1b[0m  Clean all safe items ({})", ByteSize::b(safe_total));
+            println!(
+                "    \x1b[32ma\x1b[0m  Clean all safe items ({})",
+                ByteSize::b(safe_total)
+            );
         }
         if !archive_candidates.is_empty() {
             println!("    \x1b[34mz\x1b[0m  Archive ALL old files");
-            println!("    \x1b[34m1-{}\x1b[0m Archive specific file", archive_candidates.len().min(9));
+            println!(
+                "    \x1b[34m1-{}\x1b[0m Archive specific file",
+                archive_candidates.len().min(9)
+            );
         }
         println!("    \x1b[90mq\x1b[0m  Quit");
         println!();
@@ -154,26 +201,30 @@ pub fn run() {
         while crossterm::event::poll(std::time::Duration::from_millis(150)).unwrap_or(false) {
             let _ = crossterm::event::read();
         }
-        let choice = loop {
-            if let Ok(crossterm::event::Event::Key(key)) = crossterm::event::read() {
-                match key.code {
-                    crossterm::event::KeyCode::Char('a') | crossterm::event::KeyCode::Char('A') => break 'a',
-                    crossterm::event::KeyCode::Char('z') | crossterm::event::KeyCode::Char('Z') => break 'z',
-                    crossterm::event::KeyCode::Char('1') => break '1',
-                    crossterm::event::KeyCode::Char('2') => break '2',
-                    crossterm::event::KeyCode::Char('3') => break '3',
-                    crossterm::event::KeyCode::Char('4') => break '4',
-                    crossterm::event::KeyCode::Char('5') => break '5',
-                    crossterm::event::KeyCode::Char('6') => break '6',
-                    crossterm::event::KeyCode::Char('7') => break '7',
-                    crossterm::event::KeyCode::Char('8') => break '8',
-                    crossterm::event::KeyCode::Char('9') => break '9',
-                    crossterm::event::KeyCode::Char('q') | crossterm::event::KeyCode::Char('Q')
-                    | crossterm::event::KeyCode::Esc => break 'q',
-                    _ => continue,
+        let choice =
+            loop {
+                if let Ok(crossterm::event::Event::Key(key)) = crossterm::event::read() {
+                    match key.code {
+                        crossterm::event::KeyCode::Char('a')
+                        | crossterm::event::KeyCode::Char('A') => break 'a',
+                        crossterm::event::KeyCode::Char('z')
+                        | crossterm::event::KeyCode::Char('Z') => break 'z',
+                        crossterm::event::KeyCode::Char('1') => break '1',
+                        crossterm::event::KeyCode::Char('2') => break '2',
+                        crossterm::event::KeyCode::Char('3') => break '3',
+                        crossterm::event::KeyCode::Char('4') => break '4',
+                        crossterm::event::KeyCode::Char('5') => break '5',
+                        crossterm::event::KeyCode::Char('6') => break '6',
+                        crossterm::event::KeyCode::Char('7') => break '7',
+                        crossterm::event::KeyCode::Char('8') => break '8',
+                        crossterm::event::KeyCode::Char('9') => break '9',
+                        crossterm::event::KeyCode::Char('q')
+                        | crossterm::event::KeyCode::Char('Q')
+                        | crossterm::event::KeyCode::Esc => break 'q',
+                        _ => continue,
+                    }
                 }
-            }
-        };
+            };
         let _ = crossterm::terminal::disable_raw_mode();
         println!();
 
@@ -182,7 +233,7 @@ pub fn run() {
             let mut freed: u64 = 0;
             for item in &safe_items {
                 // Use pre-scanned size (not post-delete metadata which returns 0)
-                let item_size_before = item.size;
+                let _item_size_before = item.size;
                 let mut item_freed: u64 = 0;
                 if let Ok(entries) = std::fs::read_dir(&item.path) {
                     for entry in entries.flatten() {
@@ -193,17 +244,27 @@ pub fn run() {
                         } else {
                             p.metadata().map(|m| m.len()).unwrap_or(0)
                         };
-                        let ok = if p.is_dir() { std::fs::remove_dir_all(&p).is_ok() }
-                            else { std::fs::remove_file(&p).is_ok() };
+                        let ok = if p.is_dir() {
+                            std::fs::remove_dir_all(&p).is_ok()
+                        } else {
+                            std::fs::remove_file(&p).is_ok()
+                        };
                         if ok {
                             item_freed += entry_size;
                         }
                     }
                 }
                 freed += item_freed;
-                println!("  \x1b[32m\u{2713}\x1b[0m {} ({})", item.label, ByteSize::b(item_freed));
+                println!(
+                    "  \x1b[32m\u{2713}\x1b[0m {} ({})",
+                    item.label,
+                    ByteSize::b(item_freed)
+                );
             }
-            println!("\n  \x1b[1;32m\u{2713} Freed: {}\x1b[0m\n", ByteSize::b(freed));
+            println!(
+                "\n  \x1b[1;32m\u{2713} Freed: {}\x1b[0m\n",
+                ByteSize::b(freed)
+            );
             crate::history::log_delete("recommend", freed, "smart-clean");
         } else if choice == 'z' {
             // Archive ALL old files
@@ -214,8 +275,12 @@ pub fn run() {
             let idx = (choice as usize) - ('1' as usize);
             if idx < archive_candidates.len() {
                 let single = vec![archive_candidates[idx].clone()];
-                let name = archive_candidates[idx].0.file_name()
-                    .unwrap_or_default().to_string_lossy().to_string();
+                let name = archive_candidates[idx]
+                    .0
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
                 println!("\n  \x1b[34mArchiving {}...\x1b[0m", name);
                 archive_files(&single, &home_str);
             } else {
@@ -236,7 +301,8 @@ fn archive_files(files: &[(PathBuf, u64, u64)], home_str: &str) {
     let archive_path = archive_dir.join(format!("archive_{}.tar.gz", timestamp));
 
     let total_size: u64 = files.iter().map(|(_, s, _)| s).sum();
-    let file_list: Vec<String> = files.iter()
+    let file_list: Vec<String> = files
+        .iter()
         .map(|(p, _, _)| p.display().to_string())
         .collect();
 
@@ -261,11 +327,19 @@ fn archive_files(files: &[(PathBuf, u64, u64)], home_str: &str) {
                 }
             }
 
-            println!("  \x1b[32m\u{2713}\x1b[0m Archived to: {}",
-                archive_path.display().to_string().replace(home_str, "~"));
-            println!("  \x1b[32m\u{2713}\x1b[0m Compressed: {} \u{2192} {}",
-                ByteSize::b(total_size), ByteSize::b(archive_size));
-            println!("\n  \x1b[1;32m\u{2713} Space saved: {}\x1b[0m\n", ByteSize::b(saved));
+            println!(
+                "  \x1b[32m\u{2713}\x1b[0m Archived to: {}",
+                archive_path.display().to_string().replace(home_str, "~")
+            );
+            println!(
+                "  \x1b[32m\u{2713}\x1b[0m Compressed: {} \u{2192} {}",
+                ByteSize::b(total_size),
+                ByteSize::b(archive_size)
+            );
+            println!(
+                "\n  \x1b[1;32m\u{2713} Space saved: {}\x1b[0m\n",
+                ByteSize::b(saved)
+            );
             crate::history::log_delete("archive", saved, "archive");
         } else {
             println!("  \x1b[31m\u{2717} Archive failed\x1b[0m\n");
@@ -279,9 +353,13 @@ fn run_json() {
     let mut results = Vec::new();
 
     for (path, label) in &sources {
-        if !path.exists() { continue; }
+        if !path.exists() {
+            continue;
+        }
         let size = scanner::scan_size_native(path);
-        if size < 10 * 1024 * 1024 { continue; }
+        if size < 10 * 1024 * 1024 {
+            continue;
+        }
 
         let scored = recommend_engine::score_item(path, label, size);
         if scored.action != Action::Keep {
@@ -304,7 +382,10 @@ fn run_json() {
             .filter_map(|r| r["size"].as_u64())
             .sum::<u64>(),
     });
-    println!("{}", serde_json::to_string_pretty(&output).unwrap_or_default());
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&output).unwrap_or_default()
+    );
 }
 
 fn build_sources(home: &PathBuf) -> Vec<(PathBuf, &'static str)> {
@@ -325,15 +406,27 @@ fn build_sources(home: &PathBuf) -> Vec<(PathBuf, &'static str)> {
         (home.join("Library/Caches/CocoaPods"), "CocoaPods cache"),
         (home.join("Library/Caches/Homebrew"), "Homebrew cache"),
         (home.join("Library/Caches/go-build"), "Go build cache"),
-        (home.join("Library/Developer/Xcode/DerivedData"), "Xcode DerivedData"),
-        (home.join("Library/Developer/CoreSimulator/Caches"), "Simulator caches"),
+        (
+            home.join("Library/Developer/Xcode/DerivedData"),
+            "Xcode DerivedData",
+        ),
+        (
+            home.join("Library/Developer/CoreSimulator/Caches"),
+            "Simulator caches",
+        ),
         (home.join(".conda/pkgs"), "Conda packages"),
         (home.join("miniconda3/pkgs"), "Miniconda packages"),
         (home.join("Library/Caches/Google/Chrome"), "Chrome cache"),
         (home.join("Library/Caches/com.apple.Safari"), "Safari cache"),
         (home.join("Library/Caches/Firefox"), "Firefox cache"),
-        (home.join("Library/Caches/com.microsoft.teams"), "Teams cache"),
-        (home.join("Library/Caches/com.tinyspeck.slackmacgap"), "Slack cache"),
+        (
+            home.join("Library/Caches/com.microsoft.teams"),
+            "Teams cache",
+        ),
+        (
+            home.join("Library/Caches/com.tinyspeck.slackmacgap"),
+            "Slack cache",
+        ),
         (home.join("Library/Caches/com.hnc.Discord"), "Discord cache"),
         (home.join("Library/Caches/us.zoom.xos"), "Zoom cache"),
         (home.join(".lmstudio/models"), "LM Studio models"),
@@ -360,7 +453,9 @@ fn find_archive_candidates(home: &PathBuf) -> Vec<(PathBuf, u64, u64)> {
     let one_year = 180u64; // 6 months — surface old files earlier
 
     for dir in &dirs {
-        if !dir.exists() { continue; }
+        if !dir.exists() {
+            continue;
+        }
         if let Ok(entries) = std::fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let p = entry.path();
@@ -369,9 +464,12 @@ fn find_archive_candidates(home: &PathBuf) -> Vec<(PathBuf, u64, u64)> {
                 } else {
                     p.metadata().map(|m| m.len()).unwrap_or(0)
                 };
-                if size < 1 * 1024 * 1024 { continue; } // >1MB only
+                if size < 1 * 1024 * 1024 {
+                    continue;
+                } // >1MB only
 
-                let age = p.metadata()
+                let age = p
+                    .metadata()
                     .ok()
                     .and_then(|m| m.accessed().ok().or_else(|| m.modified().ok()))
                     .and_then(|t| std::time::SystemTime::now().duration_since(t).ok())

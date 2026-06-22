@@ -1,7 +1,7 @@
 //! App uninstaller — find apps + all their remnants (preferences, caches, support files).
 
-use std::path::PathBuf;
 use std::fs;
+use std::path::PathBuf;
 
 /// Represents an installed application.
 #[derive(Debug, Clone)]
@@ -19,7 +19,8 @@ pub fn find_installed_apps() -> Vec<InstalledApp> {
 
     // Use batch du for all apps at once (single subprocess)
     let sizes = crate::scanner::scan_children(&apps_dir);
-    let size_map: std::collections::HashMap<String, u64> = sizes.into_iter()
+    let size_map: std::collections::HashMap<String, u64> = sizes
+        .into_iter()
         .map(|r| (r.path.clone(), r.size))
         .collect();
 
@@ -34,7 +35,10 @@ pub fn find_installed_apps() -> Vec<InstalledApp> {
                     .to_string();
 
                 let bundle_id = get_bundle_id(&path);
-                let size = size_map.get(&path.display().to_string()).copied().unwrap_or(0);
+                let size = size_map
+                    .get(&path.display().to_string())
+                    .copied()
+                    .unwrap_or(0);
 
                 apps.push(InstalledApp {
                     name,

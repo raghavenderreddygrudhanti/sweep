@@ -2,15 +2,15 @@
 //! Algorithm: group by size → parallel hash first+last 64KB → find matches.
 //! Uses rayon for parallel hashing across all CPU cores.
 
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::io::{self, Read, Write};
-use std::fs::File;
-use std::sync::atomic::{AtomicU64, Ordering};
 use bytesize::ByteSize;
 use colored::*;
-use walkdir::WalkDir;
 use rayon::prelude::*;
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::{self, Read, Write};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use walkdir::WalkDir;
 
 /// A group of duplicate files.
 struct DupeGroup {
@@ -25,11 +25,14 @@ fn pick_folders() -> Vec<PathBuf> {
     let options: Vec<(&str, PathBuf)> = vec![
         ("Documents", home.join("Documents")),
         ("Downloads", home.join("Downloads")),
-        ("Desktop",   home.join("Desktop")),
-        ("Pictures",  home.join("Pictures")),
-        ("Photos Library", home.join("Pictures/Photos Library.photoslibrary/originals")),
-        ("Movies",    home.join("Movies")),
-        ("Music",     home.join("Music")),
+        ("Desktop", home.join("Desktop")),
+        ("Pictures", home.join("Pictures")),
+        (
+            "Photos Library",
+            home.join("Pictures/Photos Library.photoslibrary/originals"),
+        ),
+        ("Movies", home.join("Movies")),
+        ("Music", home.join("Music")),
         ("All above", home.clone()),
     ]
     .into_iter()
@@ -41,11 +44,18 @@ fn pick_folders() -> Vec<PathBuf> {
     let mut selected = vec![false; options.len()];
 
     for (i, (label, _)) in options.iter().enumerate() {
-        let mark = if selected[i] { "\x1b[32m\u{25cf}\x1b[0m" } else { "\x1b[90m\u{25cb}\x1b[0m" };
+        let mark = if selected[i] {
+            "\x1b[32m\u{25cf}\x1b[0m"
+        } else {
+            "\x1b[90m\u{25cb}\x1b[0m"
+        };
         println!("    {} {}. {}", mark, i + 1, label);
     }
 
-    println!("\n  \x1b[90mPress 1-{} to toggle, Enter to start, q to cancel\x1b[0m", options.len());
+    println!(
+        "\n  \x1b[90mPress 1-{} to toggle, Enter to start, q to cancel\x1b[0m",
+        options.len()
+    );
     print!("  \x1b[1;33mChoice:\x1b[0m ");
     let _ = io::stdout().flush();
 
@@ -78,7 +88,11 @@ fn pick_folders() -> Vec<PathBuf> {
                         // Redraw from top of options (7 items + 1 blank + 1 instructions + 1 choice = +3)
                         print!("\x1b[{}A\r", options.len() + 2);
                         for (i, (label, _)) in options.iter().enumerate() {
-                            let mark = if selected[i] { "\x1b[32m\u{25cf}\x1b[0m" } else { "\x1b[90m\u{25cb}\x1b[0m" };
+                            let mark = if selected[i] {
+                                "\x1b[32m\u{25cf}\x1b[0m"
+                            } else {
+                                "\x1b[90m\u{25cb}\x1b[0m"
+                            };
                             print!("\x1b[2K    {} {}. {}\r\n", mark, i + 1, label);
                         }
                         print!("\x1b[2K\r\n\x1b[2K  \x1b[90mPress 1-{} to toggle, Enter to start, q to cancel\x1b[0m\r\n", options.len());
@@ -94,7 +108,8 @@ fn pick_folders() -> Vec<PathBuf> {
     let _ = crossterm::terminal::disable_raw_mode();
     println!();
 
-    let paths: Vec<PathBuf> = options.into_iter()
+    let paths: Vec<PathBuf> = options
+        .into_iter()
         .enumerate()
         .filter(|(i, (label, _))| selected[*i] && *label != "All above")
         .map(|(_, (_, p))| p)
@@ -106,16 +121,20 @@ fn pick_folders() -> Vec<PathBuf> {
 /// Ask user for minimum file size.
 fn pick_min_size() -> u64 {
     let sizes: &[(&str, u64)] = &[
-        ("100 KB (find all dupes)",   100 * 1024),
-        ("500 KB (recommended)",      500 * 1024),
-        ("1 MB",                      1024 * 1024),
-        ("5 MB (large files only)",   5 * 1024 * 1024),
-        ("50 MB (very large only)",   50 * 1024 * 1024),
+        ("100 KB (find all dupes)", 100 * 1024),
+        ("500 KB (recommended)", 500 * 1024),
+        ("1 MB", 1024 * 1024),
+        ("5 MB (large files only)", 5 * 1024 * 1024),
+        ("50 MB (very large only)", 50 * 1024 * 1024),
     ];
 
     println!("  \x1b[1mMinimum file size:\x1b[0m\n");
     for (i, (label, _)) in sizes.iter().enumerate() {
-        let mark = if i == 1 { "\x1b[32m\u{25b6}\x1b[0m" } else { " " };
+        let mark = if i == 1 {
+            "\x1b[32m\u{25b6}\x1b[0m"
+        } else {
+            " "
+        };
         println!("    {} {}. {}", mark, i + 1, label);
     }
     println!("\n  \x1b[90mPress 1-5 or Enter for default (500 KB)\x1b[0m");
@@ -191,19 +210,34 @@ pub fn run(path: &str, min_size: u64) {
     };
 
     let home_str = crate::error::home_or_exit().display().to_string();
-    println!("  Scanning: {}",
-        scan_paths.iter()
+    println!(
+        "  Scanning: {}",
+        scan_paths
+            .iter()
             .map(|p| p.display().to_string().replace(&home_str, "~"))
             .collect::<Vec<_>>()
-            .join(", "));
+            .join(", ")
+    );
     println!("  Min size: {}\n", ByteSize::b(actual_min_size));
 
     // Phase 1: Group files by size (skip junk dirs, parallel-friendly)
     let mut size_groups: HashMap<u64, Vec<PathBuf>> = HashMap::new();
     let mut total_files: u64 = 0;
 
-    let skip_dirs = ["node_modules", ".git", "target", ".venv", "__pycache__",
-        "Library", ".cache", ".Trash", ".cargo", ".rustup", ".gradle", ".m2"];
+    let skip_dirs = [
+        "node_modules",
+        ".git",
+        "target",
+        ".venv",
+        "__pycache__",
+        "Library",
+        ".cache",
+        ".Trash",
+        ".cargo",
+        ".rustup",
+        ".gradle",
+        ".m2",
+    ];
 
     for scan_path in &scan_paths {
         for entry in WalkDir::new(scan_path)
@@ -215,31 +249,42 @@ pub fn run(path: &str, min_size: u64) {
             })
             .filter_map(|e| e.ok())
         {
-            if !entry.file_type().is_file() { continue; }
+            if !entry.file_type().is_file() {
+                continue;
+            }
             let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
-            if size < actual_min_size { continue; }
+            if size < actual_min_size {
+                continue;
+            }
 
-            size_groups.entry(size)
+            size_groups
+                .entry(size)
                 .or_default()
                 .push(entry.path().to_path_buf());
             total_files += 1;
 
             if total_files % 500 == 0 {
-                print!("\r\x1b[K  \x1b[33m\u{2022}\x1b[0m Phase 1: {} files", total_files);
+                print!(
+                    "\r\x1b[K  \x1b[33m\u{2022}\x1b[0m Phase 1: {} files",
+                    total_files
+                );
                 let _ = io::stdout().flush();
             }
         }
     }
 
     // Keep only groups with 2+ files
-    let candidates: Vec<(u64, Vec<PathBuf>)> = size_groups.into_iter()
+    let candidates: Vec<(u64, Vec<PathBuf>)> = size_groups
+        .into_iter()
         .filter(|(_, paths)| paths.len() >= 2)
         .collect();
 
     let candidate_count: usize = candidates.iter().map(|(_, p)| p.len()).sum();
     print!("\r\x1b[K");
-    println!("  \x1b[32m\u{2713}\x1b[0m Scanned {} files, {} candidates",
-        total_files, candidate_count);
+    println!(
+        "  \x1b[32m\u{2713}\x1b[0m Scanned {} files, {} candidates",
+        total_files, candidate_count
+    );
 
     if candidates.is_empty() {
         println!("\n  \x1b[32m\u{2713}\x1b[0m No duplicates found!\n");
@@ -252,7 +297,8 @@ pub fn run(path: &str, min_size: u64) {
     let checked = AtomicU64::new(0);
 
     // Flatten all candidates into one list for maximum parallel throughput
-    let all_files: Vec<(u64, PathBuf)> = candidates.into_iter()
+    let all_files: Vec<(u64, PathBuf)> = candidates
+        .into_iter()
         .flat_map(|(size, paths)| paths.into_iter().map(move |p| (size, p)))
         .collect();
     // candidates consumed — memory freed
@@ -275,7 +321,10 @@ pub fn run(path: &str, min_size: u64) {
         .collect();
 
     eprint!("\r\x1b[K");
-    println!("  \x1b[32m\u{2713}\x1b[0m Hashed {} files\n", checked.load(Ordering::Relaxed));
+    println!(
+        "  \x1b[32m\u{2713}\x1b[0m Hashed {} files\n",
+        checked.load(Ordering::Relaxed)
+    );
 
     // Group by (size, hash) to find duplicates
     let mut groups: HashMap<(u64, u64), Vec<PathBuf>> = HashMap::new();
@@ -284,7 +333,8 @@ pub fn run(path: &str, min_size: u64) {
     }
     // all_files and hashed are consumed/moved — memory freed
 
-    let mut dupe_groups: Vec<DupeGroup> = groups.into_iter()
+    let mut dupe_groups: Vec<DupeGroup> = groups
+        .into_iter()
         .filter(|(_, paths)| paths.len() >= 2)
         .map(|((size, _), paths)| DupeGroup { size, paths })
         .collect();
@@ -304,23 +354,34 @@ pub fn run(path: &str, min_size: u64) {
     });
 
     // Display
-    let total_waste: u64 = dupe_groups.iter()
+    let total_waste: u64 = dupe_groups
+        .iter()
         .map(|g| g.size * (g.paths.len() as u64 - 1))
         .sum();
 
-    println!("  \x1b[1mFound {} duplicate groups ({} wasted)\x1b[0m\n",
-        dupe_groups.len(), ByteSize::b(total_waste).to_string().red());
+    println!(
+        "  \x1b[1mFound {} duplicate groups ({} wasted)\x1b[0m\n",
+        dupe_groups.len(),
+        ByteSize::b(total_waste).to_string().red()
+    );
 
     for (i, group) in dupe_groups.iter().take(10).enumerate() {
         let waste = group.size * (group.paths.len() as u64 - 1);
-        println!("  \x1b[33m{}.\x1b[0m {} each \u{00d7} {} copies = \x1b[31m{} wasted\x1b[0m",
-            i + 1, ByteSize::b(group.size), group.paths.len(), ByteSize::b(waste));
+        println!(
+            "  \x1b[33m{}.\x1b[0m {} each \u{00d7} {} copies = \x1b[31m{} wasted\x1b[0m",
+            i + 1,
+            ByteSize::b(group.size),
+            group.paths.len(),
+            ByteSize::b(waste)
+        );
 
         for (j, path) in group.paths.iter().enumerate() {
             let display = path.display().to_string().replace(&home_str, "~");
             let short = if display.len() > 60 {
-                format!("...{}", &display[display.len()-57..])
-            } else { display };
+                format!("...{}", &display[display.len() - 57..])
+            } else {
+                display
+            };
             if j == 0 {
                 println!("    \x1b[32m\u{2713} keep\x1b[0m  {}", short);
             } else {
@@ -331,13 +392,19 @@ pub fn run(path: &str, min_size: u64) {
     }
 
     if dupe_groups.len() > 10 {
-        println!("  \x1b[90m... +{} more groups\x1b[0m\n", dupe_groups.len() - 10);
+        println!(
+            "  \x1b[90m... +{} more groups\x1b[0m\n",
+            dupe_groups.len() - 10
+        );
     }
 
     // Summary + actions
     println!("  \x1b[90m\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\x1b[0m");
-    println!("  Total wasted: \x1b[1;31m{}\x1b[0m in {} groups",
-        ByteSize::b(total_waste), dupe_groups.len());
+    println!(
+        "  Total wasted: \x1b[1;31m{}\x1b[0m in {} groups",
+        ByteSize::b(total_waste),
+        dupe_groups.len()
+    );
     println!();
     println!("  \x1b[1mActions:\x1b[0m  \x1b[32ma\x1b[0m delete all dupes (keep newest)  \x1b[90mq\x1b[0m quit");
     println!();
@@ -366,9 +433,12 @@ pub fn run(path: &str, min_size: u64) {
             println!("\n  \x1b[33mRemoving duplicates (keeping newest)...\x1b[0m");
             let mut freed: u64 = 0;
             for group in &dupe_groups {
-                let mut with_times: Vec<(u64, &PathBuf)> = group.paths.iter()
+                let mut with_times: Vec<(u64, &PathBuf)> = group
+                    .paths
+                    .iter()
                     .map(|p| {
-                        let mtime = p.metadata()
+                        let mtime = p
+                            .metadata()
                             .and_then(|m| m.modified())
                             .ok()
                             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
@@ -385,7 +455,10 @@ pub fn run(path: &str, min_size: u64) {
                     }
                 }
             }
-            println!("  \x1b[1;32m\u{2713} Freed: {}\x1b[0m\n", ByteSize::b(freed));
+            println!(
+                "  \x1b[1;32m\u{2713} Freed: {}\x1b[0m\n",
+                ByteSize::b(freed)
+            );
             crate::history::log_delete("duplicates", freed, "dedup");
         }
         _ => {

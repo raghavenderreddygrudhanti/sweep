@@ -1,8 +1,8 @@
 //! Integration tests for Sweep using /tmp/sweep-test sandbox.
 //! Run with: cargo test -- --nocapture
 
-use std::path::Path;
 use std::fs;
+use std::path::Path;
 
 // Import the crate's public modules via the binary
 // Since this is a binary crate, we test via command execution
@@ -23,8 +23,14 @@ fn test_scan_size_native() {
         .expect("Failed to run sweep");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("recommendations"), "JSON output should contain recommendations");
-    assert!(stdout.contains("total_reclaimable"), "JSON output should contain total_reclaimable");
+    assert!(
+        stdout.contains("recommendations"),
+        "JSON output should contain recommendations"
+    );
+    assert!(
+        stdout.contains("total_safe"),
+        "JSON output should contain total_safe"
+    );
     println!("recommend --json output:\n{}", stdout);
 }
 
@@ -37,7 +43,10 @@ fn test_timeline_no_cache() {
         .expect("Failed to run sweep");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("changes"), "Timeline JSON should have changes field");
+    assert!(
+        stdout.contains("changes"),
+        "Timeline JSON should have changes field"
+    );
     println!("timeline --json output:\n{}", stdout);
 }
 
@@ -51,7 +60,11 @@ fn test_history_json_empty() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     // Should be valid JSON (array)
-    assert!(stdout.starts_with('['), "History JSON should be an array, got: {}", stdout);
+    assert!(
+        stdout.starts_with('['),
+        "History JSON should be an array, got: {}",
+        stdout
+    );
     println!("history --json output:\n{}", stdout);
 }
 
@@ -63,10 +76,19 @@ fn test_help_shows_new_commands() {
         .expect("Failed to run sweep");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("timeline"), "--help should list timeline command");
-    assert!(stdout.contains("recommend"), "--help should list recommend command");
+    assert!(
+        stdout.contains("timeline"),
+        "--help should list timeline command"
+    );
+    assert!(
+        stdout.contains("recommend"),
+        "--help should list recommend command"
+    );
     assert!(stdout.contains("--json"), "--help should list --json flag");
-    assert!(stdout.contains("--force"), "--help should list --force flag");
+    assert!(
+        stdout.contains("--force"),
+        "--help should list --force flag"
+    );
     println!("--help output:\n{}", stdout);
 }
 
@@ -78,5 +100,9 @@ fn test_version() {
         .expect("Failed to run sweep");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("0.3.1"), "Version should be 0.3.1, got: {}", stdout);
+    assert!(
+        stdout.contains("0.5.0"),
+        "Version should be 0.5.0, got: {}",
+        stdout
+    );
 }

@@ -44,18 +44,25 @@ pub fn load_cached_sizes() -> HashMap<String, u64> {
 
 pub fn save_size(path: &str, size: u64) {
     let cache_file = cache_path();
-    let mut entries: HashMap<String, CacheEntry> = if let Ok(content) = fs::read_to_string(&cache_file) {
-        serde_json::from_str(&content).unwrap_or_default()
-    } else {
-        HashMap::new()
-    };
+    let mut entries: HashMap<String, CacheEntry> =
+        if let Ok(content) = fs::read_to_string(&cache_file) {
+            serde_json::from_str(&content).unwrap_or_default()
+        } else {
+            HashMap::new()
+        };
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
 
-    entries.insert(path.to_string(), CacheEntry { size, timestamp: now });
+    entries.insert(
+        path.to_string(),
+        CacheEntry {
+            size,
+            timestamp: now,
+        },
+    );
 
     if let Ok(json) = serde_json::to_string_pretty(&entries) {
         let _ = fs::write(&cache_file, json);
@@ -69,8 +76,17 @@ pub fn save_all(sizes: &HashMap<String, u64>) {
         .unwrap_or_default()
         .as_secs();
 
-    let entries: HashMap<String, CacheEntry> = sizes.iter()
-        .map(|(k, &v)| (k.clone(), CacheEntry { size: v, timestamp: now }))
+    let entries: HashMap<String, CacheEntry> = sizes
+        .iter()
+        .map(|(k, &v)| {
+            (
+                k.clone(),
+                CacheEntry {
+                    size: v,
+                    timestamp: now,
+                },
+            )
+        })
         .collect();
 
     if let Ok(json) = serde_json::to_string_pretty(&entries) {

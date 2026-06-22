@@ -2,10 +2,10 @@
 //! Logged to ~/.sweep/operations.log with timestamps.
 //! Separate from history.rs (which is a simple human-readable log).
 
+use chrono::Local;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
-use chrono::Local;
 
 fn log_path() -> PathBuf {
     let dir = dirs::home_dir().unwrap_or_default().join(".sweep");
@@ -19,8 +19,11 @@ pub fn log_operation(operation: &str, path: &str, size: u64, success: bool, deta
     if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log) {
         let ts = Local::now().format("%Y-%m-%d %H:%M:%S");
         let status = if success { "OK" } else { "FAIL" };
-        let _ = writeln!(file, "[{}] {} | {} | {} | {} bytes | {}",
-            ts, status, operation, path, size, detail);
+        let _ = writeln!(
+            file,
+            "[{}] {} | {} | {} | {} bytes | {}",
+            ts, status, operation, path, size, detail
+        );
     }
 }
 
@@ -38,8 +41,11 @@ pub fn log_session_end(freed: u64, items: u32, categories: u32) {
     let log = log_path();
     if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log) {
         let ts = Local::now().format("%Y-%m-%d %H:%M:%S");
-        let _ = writeln!(file, "[{}] === DONE: freed {} bytes, {} items, {} categories ===\n",
-            ts, freed, items, categories);
+        let _ = writeln!(
+            file,
+            "[{}] === DONE: freed {} bytes, {} items, {} categories ===\n",
+            ts, freed, items, categories
+        );
     }
 }
 

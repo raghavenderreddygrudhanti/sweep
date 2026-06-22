@@ -1,7 +1,7 @@
 //! JetBrains IDE cleaner — IntelliJ, WebStorm, PyCharm, GoLand, etc.
 
-use std::path::PathBuf;
 use std::fs;
+use std::path::PathBuf;
 
 pub fn jetbrains_paths() -> Vec<(PathBuf, &'static str)> {
     let home = crate::error::home_or_exit();
@@ -14,7 +14,11 @@ pub fn jetbrains_paths() -> Vec<(PathBuf, &'static str)> {
             for entry in entries.flatten() {
                 let p = entry.path();
                 if p.is_dir() {
-                    let name = p.file_name().unwrap_or_default().to_string_lossy().to_string();
+                    let name = p
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
                     paths.push((p, leak_string(format!("JetBrains {} cache", name))));
                 }
             }

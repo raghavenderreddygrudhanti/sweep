@@ -1,5 +1,5 @@
-use crossterm::{terminal, event};
 use crossterm::event::{Event, KeyCode};
+use crossterm::{event, terminal};
 
 /// Wait for a single keypress. Returns true if user wants to quit.
 pub fn wait_for_key() -> bool {

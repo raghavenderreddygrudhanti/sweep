@@ -8,7 +8,6 @@
 /// - Cyan   (\x1b[36m) — selected/highlighted item
 /// - Gray   (\x1b[90m) — disabled, system/protected, hints, unchanged
 /// - Bold   (\x1b[1m)  — emphasis, totals, sizes
-
 use crossterm::event::{KeyCode, KeyEvent};
 
 pub const REPO: &str = "github.com/raghavenderreddygrudhanti/sweep";
@@ -20,15 +19,15 @@ pub const REPO: &str = "github.com/raghavenderreddygrudhanti/sweep";
 pub enum NavAction {
     Up,
     Down,
-    Select,       // Enter or Right arrow — open/confirm
-    Back,         // Esc, Left, Backspace — go back
-    Quit,         // q — exit to main menu
-    Toggle,       // Space — toggle selection
-    Delete,       // d/D/Delete — delete
-    SelectAll,    // a — select all
-    ClearAll,     // n — clear selection
-    Char(char),   // Any other char
-    None,         // Unknown/unhandled key
+    Select,     // Enter or Right arrow — open/confirm
+    Back,       // Esc, Left, Backspace — go back
+    Quit,       // q — exit to main menu
+    Toggle,     // Space — toggle selection
+    Delete,     // d/D/Delete — delete
+    SelectAll,  // a — select all
+    ClearAll,   // n — clear selection
+    Char(char), // Any other char
+    None,       // Unknown/unhandled key
 }
 
 /// Map a key event to a standard NavAction.
@@ -112,8 +111,10 @@ pub fn action_name(op: &str) -> &'static str {
 
 // ─── Spinners & Animation ───────────────────────────────────────────────────
 
-const SPINNERS: &[&str] = &["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"];
-const SWEEP_FRAMES: &[&str] = &["🧹    ", " 🧹   ", "  🧹  ", "   🧹 ", "    🧹", "   🧹 ", "  🧹  ", " 🧹   "];
+const SPINNERS: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const SWEEP_FRAMES: &[&str] = &[
+    "🧹    ", " 🧹   ", "  🧹  ", "   🧹 ", "    🧹", "   🧹 ", "  🧹  ", " 🧹   ",
+];
 
 pub fn spinner(frame: usize) -> &'static str {
     SPINNERS[frame % SPINNERS.len()]
@@ -134,9 +135,18 @@ pub fn logo_tui_animated(frame: usize) -> String {
     s.push_str("\r\n");
     s.push_str(&format!("    {}____{}  \r\n", c, r));
     s.push_str(&format!("   {}/ ___|\x1b[0m_      _____  ___ _ __\r\n", c));
-    s.push_str(&format!("   {}\\___ \\{}\\  \\ /\\ / / _ \\/ _ \\ '_ \\\r\n", c, r));
-    s.push_str(&format!("    {}___) |{}\\  V  V /  __/  __/ |_) |\r\n", c, r));
-    s.push_str(&format!("   {}|____/{}  \\_/\\_/ \\___|\\___| .__/\r\n", c, r));
+    s.push_str(&format!(
+        "   {}\\___ \\{}\\  \\ /\\ / / _ \\/ _ \\ '_ \\\r\n",
+        c, r
+    ));
+    s.push_str(&format!(
+        "    {}___) |{}\\  V  V /  __/  __/ |_) |\r\n",
+        c, r
+    ));
+    s.push_str(&format!(
+        "   {}|____/{}  \\_/\\_/ \\___|\\___| .__/\r\n",
+        c, r
+    ));
     s.push_str("                           |_|\r\n");
     s.push_str(&format!("   \x1b[32m{}\x1b[0m\r\n", REPO));
     s.push_str("   \x1b[90mFast system cleaner · Rust · macOS + Linux\x1b[0m\r\n");

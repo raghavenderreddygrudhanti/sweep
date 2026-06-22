@@ -1,6 +1,6 @@
 //! System cache cleaner — user caches, logs, tmp files.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// Known system cache locations (macOS + Linux).
 pub fn cache_paths() -> Vec<PathBuf> {

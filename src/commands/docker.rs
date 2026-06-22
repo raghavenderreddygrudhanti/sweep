@@ -1,9 +1,12 @@
-use colored::*;
 use crate::cleaners::docker;
+use colored::*;
 
 pub fn run(dry_run: bool) {
     let mode = if dry_run { "(preview)" } else { "" };
-    super::ui::print_header(&format!("\x1b[1;34m\u{1f433} Docker Cleanup\x1b[0m {}", mode));
+    super::ui::print_header(&format!(
+        "\x1b[1;34m\u{1f433} Docker Cleanup\x1b[0m {}",
+        mode
+    ));
 
     match docker::docker_disk_usage() {
         Some(usage) => {
@@ -22,6 +25,4 @@ pub fn run(dry_run: bool) {
             println!("  ⚠  Docker not found or not running.");
         }
     }
-
-
 }
