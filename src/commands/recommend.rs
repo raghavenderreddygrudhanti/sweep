@@ -99,21 +99,21 @@ pub fn run() {
 
     // Show archive candidates
     if !archive_candidates.is_empty() {
-        let estimated_savings = archive_total * 60 / 100; // ~60% compression for docs
-        println!("  \x1b[1;34mARCHIVE:\x1b[0m     {} ({} files, not opened 1+ year)",
+        let estimated_savings = archive_total * 60 / 100;
+        println!("  \x1b[1;34mARCHIVE:\x1b[0m     {} ({} files, not opened 6+ months)",
             ByteSize::b(archive_total).to_string().blue().bold(),
             archive_candidates.len());
         println!("  \x1b[90mEstimated savings after compression: ~{}\x1b[0m",
             ByteSize::b(estimated_savings));
         println!();
-        for (path, size, age) in archive_candidates.iter().take(5) {
+        for (idx, (path, size, age)) in archive_candidates.iter().enumerate().take(10) {
             let display = path.display().to_string().replace(&home_str, "~");
-            let short = if display.len() > 45 { format!("...{}", &display[display.len()-42..]) } else { display };
-            println!("    \x1b[34m\u{25cb}\x1b[0m {:>8}  {} \x1b[90m({} months)\x1b[0m",
-                ByteSize::b(*size), short, age / 30);
+            let short = if display.len() > 40 { format!("...{}", &display[display.len()-37..]) } else { display };
+            println!("    \x1b[34m{}.\x1b[0m {:>8}  {} \x1b[90m({} months)\x1b[0m",
+                idx + 1, ByteSize::b(*size), short, age / 30);
         }
-        if archive_candidates.len() > 5 {
-            println!("    \x1b[90m... +{} more\x1b[0m", archive_candidates.len() - 5);
+        if archive_candidates.len() > 10 {
+            println!("    \x1b[90m... +{} more\x1b[0m", archive_candidates.len() - 10);
         }
     }
     println!();
@@ -328,7 +328,7 @@ fn wait_for_key() {
 fn find_archive_candidates(home: &PathBuf) -> Vec<(PathBuf, u64, u64)> {
     let mut candidates: Vec<(PathBuf, u64, u64)> = Vec::new();
     let dirs = [home.join("Documents"), home.join("Desktop")];
-    let one_year = 365u64;
+    let one_year = 180u64; // 6 months — surface old files earlier
 
     for dir in &dirs {
         if !dir.exists() { continue; }
@@ -340,7 +340,7 @@ fn find_archive_candidates(home: &PathBuf) -> Vec<(PathBuf, u64, u64)> {
                 } else {
                     p.metadata().map(|m| m.len()).unwrap_or(0)
                 };
-                if size < 5 * 1024 * 1024 { continue; } // >5MB only
+                if size < 1 * 1024 * 1024 { continue; } // >1MB only
 
                 let age = p.metadata()
                     .ok()
