@@ -159,7 +159,15 @@ pub fn run() {
                 match key.code {
                     crossterm::event::KeyCode::Char('a') | crossterm::event::KeyCode::Char('A') => break 'a',
                     crossterm::event::KeyCode::Char('z') | crossterm::event::KeyCode::Char('Z') => break 'z',
-                    crossterm::event::KeyCode::Char(c @ '1'..='9') => break c,
+                    crossterm::event::KeyCode::Char('1') => break '1',
+                    crossterm::event::KeyCode::Char('2') => break '2',
+                    crossterm::event::KeyCode::Char('3') => break '3',
+                    crossterm::event::KeyCode::Char('4') => break '4',
+                    crossterm::event::KeyCode::Char('5') => break '5',
+                    crossterm::event::KeyCode::Char('6') => break '6',
+                    crossterm::event::KeyCode::Char('7') => break '7',
+                    crossterm::event::KeyCode::Char('8') => break '8',
+                    crossterm::event::KeyCode::Char('9') => break '9',
                     crossterm::event::KeyCode::Char('q') | crossterm::event::KeyCode::Char('Q')
                     | crossterm::event::KeyCode::Esc => break 'q',
                     _ => continue,
