@@ -141,7 +141,8 @@ pub fn run() {
             println!("    \x1b[32ma\x1b[0m  Clean all safe items ({})", ByteSize::b(safe_total));
         }
         if !archive_candidates.is_empty() {
-            println!("    \x1b[34mz\x1b[0m  Archive old files to ~/.sweep/archives/");
+            println!("    \x1b[34mz\x1b[0m  Archive ALL old files");
+            println!("    \x1b[34m1-{}\x1b[0m Archive specific file", archive_candidates.len().min(9));
         }
         println!("    \x1b[90mq\x1b[0m  Quit");
         println!();
@@ -158,6 +159,7 @@ pub fn run() {
                 match key.code {
                     crossterm::event::KeyCode::Char('a') | crossterm::event::KeyCode::Char('A') => break 'a',
                     crossterm::event::KeyCode::Char('z') | crossterm::event::KeyCode::Char('Z') => break 'z',
+                    crossterm::event::KeyCode::Char(c @ '1'..='9') => break c,
                     crossterm::event::KeyCode::Char('q') | crossterm::event::KeyCode::Char('Q')
                     | crossterm::event::KeyCode::Esc => break 'q',
                     _ => continue,
@@ -196,51 +198,70 @@ pub fn run() {
             println!("\n  \x1b[1;32m\u{2713} Freed: {}\x1b[0m\n", ByteSize::b(freed));
             crate::history::log_delete("recommend", freed, "smart-clean");
         } else if choice == 'z' {
-            // Archive old files
-            println!("\n  \x1b[34mArchiving old files...\x1b[0m");
-            let archive_dir = home.join(".sweep/archives");
-            let _ = std::fs::create_dir_all(&archive_dir);
-            let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-            let archive_path = archive_dir.join(format!("archive_{}.tar.gz", timestamp));
-
-            // Create tar.gz of all archive candidates
-            let file_list: Vec<String> = archive_candidates.iter()
-                .map(|(p, _, _)| p.display().to_string())
-                .collect();
-
-            let result = std::process::Command::new("tar")
-                .arg("czf")
-                .arg(&archive_path)
-                .args(&file_list)
-                .stderr(std::process::Stdio::null())
-                .status();
-
-            if let Ok(status) = result {
-                if status.success() {
-                    let archive_size = archive_path.metadata().map(|m| m.len()).unwrap_or(0);
-                    let saved = archive_total - archive_size;
-
-                    // Delete originals
-                    for (path, _, _) in &archive_candidates {
-                        if path.is_dir() {
-                            let _ = std::fs::remove_dir_all(path);
-                        } else {
-                            let _ = std::fs::remove_file(path);
-                        }
-                    }
-
-                    println!("  \x1b[32m\u{2713}\x1b[0m Archived to: {}", archive_path.display().to_string().replace(&home_str, "~"));
-                    println!("  \x1b[32m\u{2713}\x1b[0m Archive size: {} (compressed from {})",
-                        ByteSize::b(archive_size), ByteSize::b(archive_total));
-                    println!("\n  \x1b[1;32m\u{2713} Space saved: {}\x1b[0m\n", ByteSize::b(saved));
-                    crate::history::log_delete("archive", saved, "archive");
-                } else {
-                    println!("  \x1b[31m\u{2717} Archive failed\x1b[0m\n");
-                }
+            // Archive ALL old files
+            println!("\n  \x1b[34mArchiving all old files...\x1b[0m");
+            archive_files(&archive_candidates, &home_str);
+        } else if choice >= '1' && choice <= '9' {
+            // Archive single file
+            let idx = (choice as usize) - ('1' as usize);
+            if idx < archive_candidates.len() {
+                let single = vec![archive_candidates[idx].clone()];
+                let name = archive_candidates[idx].0.file_name()
+                    .unwrap_or_default().to_string_lossy().to_string();
+                println!("\n  \x1b[34mArchiving {}...\x1b[0m", name);
+                archive_files(&single, &home_str);
+            } else {
+                println!("\n  \x1b[90mInvalid selection.\x1b[0m");
             }
         }
     } else {
         wait_for_key();
+    }
+}
+
+/// Archive a list of files into ~/.sweep/archives/
+fn archive_files(files: &[(PathBuf, u64, u64)], home_str: &str) {
+    let home = crate::error::home_or_exit();
+    let archive_dir = home.join(".sweep/archives");
+    let _ = std::fs::create_dir_all(&archive_dir);
+    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+    let archive_path = archive_dir.join(format!("archive_{}.tar.gz", timestamp));
+
+    let total_size: u64 = files.iter().map(|(_, s, _)| s).sum();
+    let file_list: Vec<String> = files.iter()
+        .map(|(p, _, _)| p.display().to_string())
+        .collect();
+
+    let result = std::process::Command::new("tar")
+        .arg("czf")
+        .arg(&archive_path)
+        .args(&file_list)
+        .stderr(std::process::Stdio::null())
+        .status();
+
+    if let Ok(status) = result {
+        if status.success() {
+            let archive_size = archive_path.metadata().map(|m| m.len()).unwrap_or(0);
+            let saved = total_size.saturating_sub(archive_size);
+
+            // Delete originals
+            for (path, _, _) in files {
+                if path.is_dir() {
+                    let _ = std::fs::remove_dir_all(path);
+                } else {
+                    let _ = std::fs::remove_file(path);
+                }
+            }
+
+            println!("  \x1b[32m\u{2713}\x1b[0m Archived to: {}",
+                archive_path.display().to_string().replace(home_str, "~"));
+            println!("  \x1b[32m\u{2713}\x1b[0m Compressed: {} \u{2192} {}",
+                ByteSize::b(total_size), ByteSize::b(archive_size));
+            println!("\n  \x1b[1;32m\u{2713} Space saved: {}\x1b[0m\n", ByteSize::b(saved));
+            crate::history::log_delete("archive", saved, "archive");
+        } else {
+            println!("  \x1b[31m\u{2717} Archive failed\x1b[0m\n");
+        }
     }
 }
 
