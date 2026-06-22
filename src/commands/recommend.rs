@@ -71,10 +71,14 @@ pub fn run() {
     let safe_total: u64 = safe_items.iter().map(|i| i.size).sum();
     let review_total: u64 = review_items.iter().map(|i| i.size).sum();
 
+    // Scan for old unused files in Documents/Desktop (archive candidates)
+    let archive_candidates = find_archive_candidates(&home);
+    let archive_total: u64 = archive_candidates.iter().map(|(_, s, _)| s).sum();
+
     // Summary
     println!("\n  \x1b[90m\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\x1b[0m\n");
 
-    if safe_items.is_empty() && review_items.is_empty() {
+    if safe_items.is_empty() && review_items.is_empty() && archive_candidates.is_empty() {
         println!("  \x1b[32m\u{2713}\x1b[0m System is clean — nothing to recommend.\n");
         wait_for_key();
         return;
@@ -91,6 +95,26 @@ pub fn run() {
             ByteSize::b(review_total).to_string().yellow().bold(),
             review_items.len());
         println!("  \x1b[90mMight be safe, check before deleting.\x1b[0m");
+    }
+
+    // Show archive candidates
+    if !archive_candidates.is_empty() {
+        let estimated_savings = archive_total * 60 / 100; // ~60% compression for docs
+        println!("  \x1b[1;34mARCHIVE:\x1b[0m     {} ({} files, not opened 1+ year)",
+            ByteSize::b(archive_total).to_string().blue().bold(),
+            archive_candidates.len());
+        println!("  \x1b[90mEstimated savings after compression: ~{}\x1b[0m",
+            ByteSize::b(estimated_savings));
+        println!();
+        for (path, size, age) in archive_candidates.iter().take(5) {
+            let display = path.display().to_string().replace(&home_str, "~");
+            let short = if display.len() > 45 { format!("...{}", &display[display.len()-42..]) } else { display };
+            println!("    \x1b[34m\u{25cb}\x1b[0m {:>8}  {} \x1b[90m({} months)\x1b[0m",
+                ByteSize::b(*size), short, age / 30);
+        }
+        if archive_candidates.len() > 5 {
+            println!("    \x1b[90m... +{} more\x1b[0m", archive_candidates.len() - 5);
+        }
     }
     println!();
 
@@ -111,8 +135,15 @@ pub fn run() {
     }
 
     // Actions
-    if !safe_items.is_empty() {
-        println!("  \x1b[1mActions:\x1b[0m  \x1b[32ma\x1b[0m clean all safe  \x1b[90mq\x1b[0m quit");
+    if !safe_items.is_empty() || !archive_candidates.is_empty() {
+        println!("  \x1b[1mActions:\x1b[0m");
+        if !safe_items.is_empty() {
+            println!("    \x1b[32ma\x1b[0m  Clean all safe items ({})", ByteSize::b(safe_total));
+        }
+        if !archive_candidates.is_empty() {
+            println!("    \x1b[34mz\x1b[0m  Archive old files to ~/.sweep/archives/");
+        }
+        println!("    \x1b[90mq\x1b[0m  Quit");
         println!();
         print!("  \x1b[1;33mChoice:\x1b[0m ");
         let _ = io::stdout().flush();
@@ -126,6 +157,7 @@ pub fn run() {
             if let Ok(crossterm::event::Event::Key(key)) = crossterm::event::read() {
                 match key.code {
                     crossterm::event::KeyCode::Char('a') | crossterm::event::KeyCode::Char('A') => break 'a',
+                    crossterm::event::KeyCode::Char('z') | crossterm::event::KeyCode::Char('Z') => break 'z',
                     crossterm::event::KeyCode::Char('q') | crossterm::event::KeyCode::Char('Q')
                     | crossterm::event::KeyCode::Esc => break 'q',
                     _ => continue,
@@ -163,6 +195,49 @@ pub fn run() {
             }
             println!("\n  \x1b[1;32m\u{2713} Freed: {}\x1b[0m\n", ByteSize::b(freed));
             crate::history::log_delete("recommend", freed, "smart-clean");
+        } else if choice == 'z' {
+            // Archive old files
+            println!("\n  \x1b[34mArchiving old files...\x1b[0m");
+            let archive_dir = home.join(".sweep/archives");
+            let _ = std::fs::create_dir_all(&archive_dir);
+            let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+            let archive_path = archive_dir.join(format!("archive_{}.tar.gz", timestamp));
+
+            // Create tar.gz of all archive candidates
+            let file_list: Vec<String> = archive_candidates.iter()
+                .map(|(p, _, _)| p.display().to_string())
+                .collect();
+
+            let result = std::process::Command::new("tar")
+                .arg("czf")
+                .arg(&archive_path)
+                .args(&file_list)
+                .stderr(std::process::Stdio::null())
+                .status();
+
+            if let Ok(status) = result {
+                if status.success() {
+                    let archive_size = archive_path.metadata().map(|m| m.len()).unwrap_or(0);
+                    let saved = archive_total - archive_size;
+
+                    // Delete originals
+                    for (path, _, _) in &archive_candidates {
+                        if path.is_dir() {
+                            let _ = std::fs::remove_dir_all(path);
+                        } else {
+                            let _ = std::fs::remove_file(path);
+                        }
+                    }
+
+                    println!("  \x1b[32m\u{2713}\x1b[0m Archived to: {}", archive_path.display().to_string().replace(&home_str, "~"));
+                    println!("  \x1b[32m\u{2713}\x1b[0m Archive size: {} (compressed from {})",
+                        ByteSize::b(archive_size), ByteSize::b(archive_total));
+                    println!("\n  \x1b[1;32m\u{2713} Space saved: {}\x1b[0m\n", ByteSize::b(saved));
+                    crate::history::log_delete("archive", saved, "archive");
+                } else {
+                    println!("  \x1b[31m\u{2717} Archive failed\x1b[0m\n");
+                }
+            }
         }
     } else {
         wait_for_key();
@@ -246,4 +321,41 @@ fn wait_for_key() {
     }
     let _ = crossterm::event::read();
     let _ = crossterm::terminal::disable_raw_mode();
+}
+
+/// Find files in Documents/Desktop that haven't been accessed in 1+ year.
+/// Returns (path, size, age_days).
+fn find_archive_candidates(home: &PathBuf) -> Vec<(PathBuf, u64, u64)> {
+    let mut candidates: Vec<(PathBuf, u64, u64)> = Vec::new();
+    let dirs = [home.join("Documents"), home.join("Desktop")];
+    let one_year = 365u64;
+
+    for dir in &dirs {
+        if !dir.exists() { continue; }
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                let size = if p.is_dir() {
+                    crate::scanner::scan_size_native(&p)
+                } else {
+                    p.metadata().map(|m| m.len()).unwrap_or(0)
+                };
+                if size < 5 * 1024 * 1024 { continue; } // >5MB only
+
+                let age = p.metadata()
+                    .ok()
+                    .and_then(|m| m.accessed().ok().or_else(|| m.modified().ok()))
+                    .and_then(|t| std::time::SystemTime::now().duration_since(t).ok())
+                    .map(|d| d.as_secs() / 86400)
+                    .unwrap_or(0);
+
+                if age > one_year {
+                    candidates.push((p, size, age));
+                }
+            }
+        }
+    }
+
+    candidates.sort_by(|a, b| b.1.cmp(&a.1)); // Sort by size desc
+    candidates
 }
