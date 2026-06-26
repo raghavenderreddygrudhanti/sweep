@@ -375,12 +375,16 @@ fn run_json() {
         }
     }
 
+    // Compute total_safe BEFORE moving results into the json! macro
+    let total_safe: u64 = results
+        .iter()
+        .filter(|r| r["action"] == "SAFE CLEAN")
+        .filter_map(|r| r["size"].as_u64())
+        .sum();
+
     let output = serde_json::json!({
         "recommendations": results,
-        "total_safe": results.iter()
-            .filter(|r| r["action"] == "SAFE CLEAN")
-            .filter_map(|r| r["size"].as_u64())
-            .sum::<u64>(),
+        "total_safe": total_safe,
     });
     println!(
         "{}",

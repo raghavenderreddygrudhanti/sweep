@@ -7,7 +7,7 @@ use crossterm::{event, terminal};
 use std::io::{self, Write};
 use std::path::PathBuf;
 
-pub fn run(dry_run: bool, _mode: DeleteMode) {
+pub fn run(dry_run: bool, mode: DeleteMode) {
     // Clear screen
     print!("\x1b[2J\x1b[H");
     let _ = io::stdout().flush();
@@ -226,6 +226,12 @@ pub fn run(dry_run: bool, _mode: DeleteMode) {
     println!("\n  \x1b[33mCleaning...\x1b[0m\n");
     let mut actually_freed: u64 = 0;
 
+    // Show delete mode so the user knows what's happening
+    match mode {
+        DeleteMode::Trash => println!("  \x1b[90mMode: move to Trash (recoverable)\x1b[0m\n"),
+        DeleteMode::Force => println!("  \x1b[31mMode: permanent delete (--force)\x1b[0m\n"),
+    }
+
     for (path, _size, label) in &targets {
         print!("  \x1b[33m\u{2022}\x1b[0m {}...\r", label);
         let _ = io::stdout().flush();
@@ -233,19 +239,28 @@ pub fn run(dry_run: bool, _mode: DeleteMode) {
         let mut item_freed: u64 = 0;
         let mut failed: u32 = 0;
 
+        // Delete children individually so we can measure each before removal.
+        // Cache directories are always directories — we delete their *contents*
+        // rather than the directory itself so the cache dir is recreated cleanly.
         if let Ok(entries) = std::fs::read_dir(path) {
             for entry in entries.flatten() {
                 let p = entry.path();
+                // Measure size BEFORE deletion
                 let sz = if p.is_dir() {
                     scanner::scan_size_native(&p)
                 } else {
                     p.metadata().map(|m| m.len()).unwrap_or(0)
                 };
 
-                let ok = if p.is_dir() {
-                    std::fs::remove_dir_all(&p).is_ok()
-                } else {
-                    std::fs::remove_file(&p).is_ok()
+                let ok = match mode {
+                    DeleteMode::Trash => crate::cleaners::trash_delete(&p).is_ok(),
+                    DeleteMode::Force => {
+                        if p.is_dir() {
+                            std::fs::remove_dir_all(&p).is_ok()
+                        } else {
+                            std::fs::remove_file(&p).is_ok()
+                        }
+                    }
                 };
 
                 if ok {
@@ -279,7 +294,15 @@ pub fn run(dry_run: bool, _mode: DeleteMode) {
 
         actually_freed += item_freed;
         if item_freed > 0 {
-            crate::history::log_delete(path.to_str().unwrap_or(""), item_freed, "clean");
+            crate::history::log_delete(
+                path.to_str().unwrap_or(""),
+                item_freed,
+                if mode == DeleteMode::Trash {
+                    "trash"
+                } else {
+                    "delete"
+                },
+            );
         }
     }
 
