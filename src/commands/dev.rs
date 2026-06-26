@@ -8,15 +8,15 @@ use crossterm::{cursor, event, execute, terminal};
 use std::io::{self, Write};
 use std::time::{Duration, Instant, SystemTime};
 
-pub fn run(dry_run: bool, older_than_days: u64, _mode: DeleteMode) {
+pub fn run(dry_run: bool, older_than_days: u64, mode: DeleteMode) {
     // Clear screen for a fresh view
     print!("\x1b[2J\x1b[H");
     let _ = io::stdout().flush();
 
-    let mode = if dry_run { "(preview)" } else { "" };
+    let dry_label = if dry_run { "(preview)" } else { "" };
     super::ui::print_header(&format!(
         "\x1b[1;36m\u{26a1} Dev Artifacts\x1b[0m {} \u{2014} older than {}d",
-        mode, older_than_days
+        dry_label, older_than_days
     ));
     print!("  \x1b[33m\u{2022}\x1b[0m Scanning...");
     let _ = io::stdout().flush();
@@ -195,11 +195,35 @@ pub fn run(dry_run: bool, older_than_days: u64, _mode: DeleteMode) {
                         );
                         println!("  Run `sweep dev` (without --dry-run) to delete.\n");
                     } else {
+                        // Show delete mode
+                        match mode {
+                            DeleteMode::Trash => {
+                                println!("\n  \x1b[90mMoving to Trash (recoverable)...\x1b[0m")
+                            }
+                            DeleteMode::Force => {
+                                println!("\n  \x1b[31mPermanently deleting (--force)...\x1b[0m")
+                            }
+                        }
                         let mut freed: u64 = 0;
                         for (path, size, _, checked) in &found {
                             if *checked {
-                                let _ = std::fs::remove_dir_all(path);
-                                freed += size;
+                                let p = std::path::Path::new(path);
+                                let ok = match mode {
+                                    DeleteMode::Trash => crate::cleaners::trash_delete(p).is_ok(),
+                                    DeleteMode::Force => std::fs::remove_dir_all(p).is_ok(),
+                                };
+                                if ok {
+                                    freed += size;
+                                    crate::history::log_delete(
+                                        path,
+                                        *size,
+                                        if mode == DeleteMode::Trash {
+                                            "trash"
+                                        } else {
+                                            "delete"
+                                        },
+                                    );
+                                }
                             }
                         }
                         println!(
